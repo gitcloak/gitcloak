@@ -13,8 +13,16 @@ export default async function AppPage() {
 
   // Fetch repositories using GitHub App installation
   // This will only show repositories the user selected during installation
-  let repositories = []
-  let error = null
+  let repositories: Array<{
+    id: number
+    name: string
+    fullName: string
+    owner: string
+    private: boolean
+    description: string | null
+    updatedAt: string
+  }> = []
+  let error: string | null = null
 
   try {
     const { Octokit } = await import("@octokit/rest")

@@ -1,7 +1,5 @@
 import { App } from "@octokit/app"
 import { Octokit } from "@octokit/rest"
-import { readFileSync } from "fs"
-import { join } from "path"
 
 /**
  * GitHub App client for fine-grained repository access
@@ -12,13 +10,30 @@ export class GitHubAppClient {
   private octokit: Octokit | null = null
 
   constructor() {
-    // Read private key from file
-    const privateKeyPath = process.env.GITHUB_PRIVATE_KEY_PATH || "./gitcloak-app.private-key.pem"
-    const privateKey = readFileSync(join(process.cwd(), privateKeyPath), "utf-8")
+    // Get private key from environment variable
+    const privateKey = process.env.GITHUB_PRIVATE_KEY
+
+    if (!privateKey) {
+      throw new Error('GITHUB_PRIVATE_KEY environment variable is not set')
+    }
+
+    // Handle base64-encoded keys (common in deployment platforms)
+    let decodedKey = privateKey
+    if (!privateKey.includes('BEGIN')) {
+      try {
+        decodedKey = Buffer.from(privateKey, 'base64').toString('utf-8')
+      } catch (error) {
+        // If base64 decode fails, use the key as-is
+        decodedKey = privateKey
+      }
+    }
+
+    // Replace literal \n with actual newlines if needed
+    const formattedKey = decodedKey.replace(/\\n/g, '\n')
 
     this.app = new App({
       appId: process.env.GITHUB_APP_ID!,
-      privateKey: privateKey,
+      privateKey: formattedKey,
       oauth: {
         clientId: process.env.GITHUB_CLIENT_ID!,
         clientSecret: process.env.GITHUB_CLIENT_SECRET!,
