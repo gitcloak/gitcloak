@@ -1,7 +1,10 @@
-import { signIn, signOut, auth } from "@/auth"
+'use client'
 
-export async function AuthButton() {
-  const session = await auth()
+import { signIn, signOut } from "next-auth/react"
+import { useSession } from "next-auth/react"
+
+export function AuthButton() {
+  const { data: session } = useSession()
 
   if (session?.user) {
     return (
@@ -29,28 +32,21 @@ export async function AuthButton() {
           )}
           <span>Signed in as {session.user.name || session.user.email}</span>
         </div>
-        <form
-          action={async () => {
-            'use server'
-            await signOut()
+        <button
+          onClick={() => signOut({ callbackUrl: '/' })}
+          style={{
+            padding: '0.75rem 1.5rem',
+            fontSize: '1rem',
+            backgroundColor: '#f44336',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontWeight: '500',
           }}
         >
-          <button
-            type="submit"
-            style={{
-              padding: '0.75rem 1.5rem',
-              fontSize: '1rem',
-              backgroundColor: '#f44336',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontWeight: '500',
-            }}
-          >
-            Sign Out
-          </button>
-        </form>
+          Sign Out
+        </button>
       </div>
     )
   }

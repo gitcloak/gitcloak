@@ -237,13 +237,35 @@ export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps)
         fontSize: '0.75rem',
         color: '#666',
         display: 'flex',
-        justifyContent: 'space-between'
+        justifyContent: 'space-between',
+        alignItems: 'center'
       }}>
         <div>
           {isSaving ? '● Saving...' : hasChanges ? '● Modified' : selectedFile ? '● Saved' : 'Ready'}
         </div>
-        <div>
-          {selectedFile ? `${content.split('\n').length} lines | ${content.length} chars` : 'UTF-8'}
+        <div style={{
+          display: 'flex',
+          gap: '1rem',
+          alignItems: 'center'
+        }}>
+          <div>
+            {selectedFile ? `${content.split('\n').length} lines | ${content.length} chars` : 'UTF-8'}
+          </div>
+          <a
+            href="https://github.com/gitcloak/gitcloak"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: '#0366d6',
+              textDecoration: 'none',
+              fontWeight: '500',
+              transition: 'opacity 0.2s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+          >
+            Contribute
+          </a>
         </div>
       </div>
     </div>
