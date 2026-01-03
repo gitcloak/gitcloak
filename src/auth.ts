@@ -6,11 +6,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     GitHub({
       clientId: process.env.GITHUB_CLIENT_ID,
       clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      // GitHub App authorization - users select repositories during installation
       authorization: {
         url: "https://github.com/login/oauth/authorize",
         params: {
-          // For GitHub Apps, we don't specify scope in OAuth params
-          // Permissions are controlled by the App's settings
+          // No scope needed - permissions are defined in the GitHub App settings
+          // Users will be prompted to select repositories during authorization
         },
       },
     }),

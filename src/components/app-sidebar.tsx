@@ -43,6 +43,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
   )
   const [isRepoSelectorOpen, setIsRepoSelectorOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isSigningOut, setIsSigningOut] = useState(false)
 
   const handleRepoChange = (repo: Repository) => {
     setSelectedRepo(repo)
@@ -57,6 +58,24 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
 
   const handleLoadingChange = (isLoading: boolean) => {
     setIsRefreshing(isLoading)
+  }
+
+  const handleSignOut = async () => {
+    if (isSigningOut) return
+
+    setIsSigningOut(true)
+
+    try {
+      // Call API to revoke GitHub App authorization
+      await fetch('/api/auth/signout', {
+        method: 'POST'
+      })
+    } catch (error) {
+      console.error('Error revoking authorization:', error)
+    }
+
+    // Sign out regardless of API call result
+    await signOut({ callbackUrl: '/', redirect: true })
   }
 
   return (
@@ -373,7 +392,8 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
             Settings
           </button>
           <button
-            onClick={() => signOut({ callbackUrl: '/' })}
+            onClick={handleSignOut}
+            disabled={isSigningOut}
             style={{
               flex: 1,
               padding: '0.5rem',
@@ -381,10 +401,11 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
               border: '1px solid #e1e4e8',
               borderRadius: '6px',
               backgroundColor: 'white',
-              cursor: 'pointer'
+              cursor: isSigningOut ? 'not-allowed' : 'pointer',
+              opacity: isSigningOut ? 0.6 : 1
             }}
           >
-            Sign Out
+            {isSigningOut ? 'Signing out...' : 'Sign Out'}
           </button>
         </div>
       </div>
