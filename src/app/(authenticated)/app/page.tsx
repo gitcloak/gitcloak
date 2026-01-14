@@ -1,4 +1,4 @@
-import { auth } from "@/auth"
+import { auth, signOut } from "@/auth"
 import { redirect } from "next/navigation"
 import { ClientPage } from "./client-page"
 
@@ -65,6 +65,15 @@ export default async function AppPage() {
     }
   } catch (err) {
     console.error('Error loading repositories:', err)
+
+    // Check if it's a 401 error (expired/invalid token)
+    if (err && typeof err === 'object' && 'status' in err && err.status === 401) {
+      // Token is invalid or expired - redirect to sign-in
+      console.log('Token expired or invalid, redirecting to sign-in')
+      // First sign out to clear the invalid session, then redirect to sign in
+      redirect('/api/auth/signout?callbackUrl=/api/auth/signin?callbackUrl=/app')
+    }
+
     error = err instanceof Error ? err.message : 'Failed to load repositories'
   }
 
