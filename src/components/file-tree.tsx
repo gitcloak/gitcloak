@@ -78,6 +78,10 @@ function TreeItem({
   return (
     <div>
       <div
+        data-testid="file-node"
+        data-path={node.path}
+        data-node-type={node.type}
+        data-selected={isSelected}
         onClick={handleToggle}
         style={{
           paddingLeft,
@@ -190,7 +194,7 @@ export function FileTree({ owner, repo, onFileSelect, onRefresh, selectedFilePat
 
   if (isLoading) {
     return (
-      <div style={{ padding: '1rem', color: '#666', fontSize: '13px' }}>
+      <div data-testid="file-tree-loading" style={{ padding: '1rem', color: '#666', fontSize: '13px' }}>
         Loading files...
       </div>
     )
@@ -198,7 +202,7 @@ export function FileTree({ owner, repo, onFileSelect, onRefresh, selectedFilePat
 
   if (error) {
     return (
-      <div style={{ padding: '1rem', color: '#d73a49', fontSize: '13px' }}>
+      <div data-testid="file-tree-error" style={{ padding: '1rem', color: '#d73a49', fontSize: '13px' }}>
         {error}
       </div>
     )
@@ -206,7 +210,7 @@ export function FileTree({ owner, repo, onFileSelect, onRefresh, selectedFilePat
 
   if (rootNodes.length === 0) {
     return (
-      <div style={{ padding: '1rem', color: '#666', fontSize: '13px' }}>
+      <div data-testid="file-tree-empty" style={{ padding: '1rem', color: '#666', fontSize: '13px' }}>
         No files found
       </div>
     )

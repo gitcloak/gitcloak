@@ -205,6 +205,9 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
         </div>
         <div style={{ position: 'relative' }}>
           <button
+            data-testid="repo-selector"
+            data-repo={selectedRepo ? selectedRepo.fullName : ''}
+            data-repo-status={repoStatus}
             onClick={() => setIsRepoSelectorOpen(!isRepoSelectorOpen)}
             style={{
               width: '100%',
@@ -246,6 +249,9 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
               {repositories.map((repo) => (
                 <button
                   key={repo.id}
+                  data-testid="repo-option"
+                  data-repo={repo.fullName}
+                  data-selected={selectedRepo?.id === repo.id}
                   onClick={() => {
                     handleRepoChange(repo)
                     setIsRepoSelectorOpen(false)
@@ -323,6 +329,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
           {selectedRepo && (
             <div style={{ display: 'flex', gap: '0.25rem' }}>
               <button
+                data-testid="refresh-files-button"
                 onClick={handleRefresh}
                 disabled={isRefreshing}
                 style={{
@@ -350,6 +357,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
                 />
               </button>
               <button
+                data-testid="new-file-button"
                 onClick={onNewFile}
                 style={{
                   padding: '0.375rem 0.5rem',
@@ -423,7 +431,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
             />
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
+            <div data-testid="user-name" style={{
               fontSize: '0.875rem',
               fontWeight: '500',
               overflow: 'hidden',
@@ -433,7 +441,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
               {userName}
             </div>
             {userEmail && (
-              <div style={{
+              <div data-testid="user-email" style={{
                 fontSize: '0.75rem',
                 color: '#666',
                 overflow: 'hidden',
@@ -451,6 +459,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
           gap: '0.5rem'
         }}>
           <button
+            data-testid="settings-button"
             style={{
               flex: 1,
               padding: '0.5rem',
@@ -464,6 +473,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
             Settings
           </button>
           <button
+            data-testid="signout-button"
             onClick={handleSignOut}
             disabled={isSigningOut}
             style={{

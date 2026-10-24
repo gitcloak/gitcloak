@@ -173,11 +173,14 @@ gitcloak/
 │   │   ├── file-tree.tsx      # Repository file browser
 │   │   └── ...
 │   ├── lib/                   # Utility libraries
+│   │   ├── backends/          # Storage backends (git / mock)
 │   │   ├── encryption.ts      # Age encryption/decryption
 │   │   ├── gitcloak.ts        # Password verification
+│   │   ├── session.ts         # Session resolution (mock-aware)
 │   │   └── github-app.ts      # GitHub API client
 │   └── auth.ts                # NextAuth configuration
 ├── public/                    # Static assets
+├── tests/e2e/                 # Playwright end-to-end tests
 ├── .env.local                 # Environment variables (not in git)
 ├── package.json
 ├── tsconfig.json
@@ -213,6 +216,38 @@ brew install age  # macOS
 age -d -o decrypted.md secrets.md.age
 # Enter your repository password when prompted
 \`\`\`
+
+## Storage Backends
+
+All repository access on the server goes through a small backend interface (`src/lib/backends`):
+
+- **`git`** (default) – talks to GitHub with the signed-in user's OAuth token.
+- **`mock`** – an in-memory backend seeded with real age-encrypted content, used by the end-to-end test suite.
+
+Select the backend with the `FILE_BACKEND` environment variable (`git` or `mock`).
+
+When `FILE_BACKEND=mock`, authentication is bypassed with a deterministic mock
+session, so the app can be driven locally without GitHub credentials. The mock
+backend also exposes test-only endpoints (`POST /api/test/reset` and
+`GET /api/test/state`) which return `404` whenever the mock backend is not
+active.
+
+## End-to-End Tests
+
+The frontend is covered by Playwright tests that run the real Next.js app
+against the mock backend:
+
+```bash
+# Uses the locally installed Google Chrome (`channel: "chrome"`).
+# On a machine without Chrome run `npx playwright install chromium` and
+# remove `channel` from playwright.config.ts.
+npm run test:e2e
+```
+
+The suite boots `next dev` on port 3100 with `FILE_BACKEND=mock` (see
+`playwright.config.ts`), resets the backend before every test and verifies the
+landing page, repository selector, lock/unlock flow, file tree, editor,
+decryption with an alternative password and creating/saving encrypted files.
 
 ## Contributing
 

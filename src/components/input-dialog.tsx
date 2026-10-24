@@ -52,17 +52,18 @@ export function InputDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px]" data-testid="new-file-dialog">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>{description}</DialogDescription>
+            <DialogTitle data-testid="new-file-title">{title}</DialogTitle>
+            <DialogDescription data-testid="new-file-description">{description}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="input">{label}</Label>
               <Input
                 id="input"
+                data-testid="new-file-input"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 placeholder={placeholder}
@@ -78,7 +79,7 @@ export function InputDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={!value.trim()}>
+            <Button type="submit" data-testid="new-file-submit" disabled={!value.trim()}>
               Create
             </Button>
           </DialogFooter>
