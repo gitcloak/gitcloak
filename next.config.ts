@@ -1,9 +1,6 @@
 import type { NextConfig } from "next";
 
-const fileBackend = process.env.FILE_BACKEND?.trim().toLowerCase();
-const useMockBackend =
-  fileBackend === "mock" ||
-  (!fileBackend && process.env.VERCEL_ENV === "preview");
+const useMockBackend = process.env.FILE_BACKEND?.trim().toLowerCase() === "mock";
 
 const nextConfig: NextConfig = {
   // Allows end-to-end tests to run a second dev server with an isolated build

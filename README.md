@@ -229,6 +229,8 @@ All repository access on the server goes through a small backend interface (`src
 - **`mock`** – an in-memory backend seeded with real age-encrypted content, used by the end-to-end test suite.
 
 Select the backend with the `FILE_BACKEND` environment variable (`git` or `mock`).
+`git` is the default everywhere; `mock` is reserved for the automated test suite
+and is never selected automatically.
 
 When `FILE_BACKEND=mock`, authentication is bypassed with a deterministic mock
 session, so the app can be driven locally without GitHub credentials. The mock
@@ -238,15 +240,15 @@ active.
 
 ### Vercel preview deployments
 
-Preview deployments automatically use the mock backend (unless `FILE_BACKEND`
-is explicitly set). Preview hostnames change on every deploy so they cannot be
-registered as GitHub OAuth callbacks, and the GitHub/Auth environment variables
-are scoped to Production — without a fallback Auth.js would refuse to start and
-show the *"There is a problem with the server configuration"* error on
-`/api/auth/error`. Running previews on the mock backend keeps them usable as a
-full UI demo. To run a preview against real GitHub instead, set `FILE_BACKEND=git`
-in the Preview environment together with the GitHub/Auth variables and add the
-branch alias callback URL to the GitHub App.
+Like every environment other than the automated test suite, preview deployments
+use the real GitHub backend. A preview therefore needs the GitHub/Auth variables
+(`AUTH_SECRET`, `GITHUB_*`, `AUTH_URL`, `NEXT_PUBLIC_GITHUB_APP_NAME`) set in the
+**Preview** scope, and its OAuth callback URL registered on the GitHub App.
+Because each deploy gets a unique hostname, register the stable **branch alias**
+(e.g. `https://gitcloak-git-<branch>-<team>.vercel.app/api/auth/callback/github`)
+and set `AUTH_URL` to that same alias — per-commit URLs will not match the OAuth
+callback. Without those variables Auth.js shows the *"There is a problem with
+the server configuration"* error on `/api/auth/error`.
 
 ## End-to-End Tests
 

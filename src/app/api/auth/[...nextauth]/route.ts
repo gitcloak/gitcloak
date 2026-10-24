@@ -5,10 +5,10 @@ import { isMockBackend } from "@/lib/backends"
 import { MOCK_SESSION } from "@/lib/session"
 
 /**
- * In mock mode (end-to-end tests and Vercel preview deployments) there are no
- * GitHub OAuth credentials and no `AUTH_SECRET`, so Auth.js must not run at
- * all. Instead we answer the handful of endpoints the UI touches with a
- * deterministic, already-signed-in session.
+ * In mock mode (the automated end-to-end test suite) there are no GitHub OAuth
+ * credentials and no `AUTH_SECRET`, so Auth.js must not run at all. Instead we
+ * answer the handful of endpoints the UI touches with a deterministic,
+ * already-signed-in session.
  */
 function mockSession() {
   return {

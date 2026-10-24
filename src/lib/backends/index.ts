@@ -11,28 +11,17 @@ export {
 } from './mock'
 
 /**
- * Vercel preview deployments never have the production-scoped GitHub OAuth
- * credentials, and their hostnames change on every deploy so they cannot be
- * registered as OAuth callback URLs. Without a `secret` Auth.js refuses to
- * start and the app shows the "problem with the server configuration" error,
- * so previews fall back to the self-contained mock backend instead.
- */
-function isVercelPreview(): boolean {
-  return process.env.VERCEL_ENV === 'preview'
-}
-
-/**
  * Which backend should serve requests.
  *
- * - An explicit `FILE_BACKEND` (`git` or `mock`) always wins.
- * - Otherwise Vercel preview deployments use the mock backend.
- * - Everything else (local dev / production) uses the real GitHub backend.
+ * - An explicit `FILE_BACKEND=mock` selects the mock backend. This is reserved
+ *   for the automated test suite (Playwright sets it) and is never chosen
+ *   automatically.
+ * - Everywhere else — local development, production and Vercel previews — the
+ *   real GitHub backend is used.
  */
 export function getBackendKind(): BackendKind {
   const configured = process.env.FILE_BACKEND?.trim().toLowerCase()
   if (configured === 'mock') return 'mock'
-  if (configured === 'git') return 'git'
-  if (isVercelPreview()) return 'mock'
   return 'git'
 }
 
