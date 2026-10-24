@@ -2,10 +2,18 @@ import NextAuth from "next-auth"
 import GitHub from "next-auth/providers/github"
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  secret: process.env.AUTH_SECRET,
   providers: [
     GitHub({
       clientId: process.env.GITHUB_CLIENT_ID,
       clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      // GitHub now includes the `iss` parameter on the OAuth callback
+      // (`https://github.com/login/oauth`). Auth.js's built-in GitHub provider is
+      // `type: "oauth"` with no issuer, so oauth4webapi validates `iss` against the
+      // sentinel `https://authjs.dev` and throws "unexpected iss response parameter
+      // value" -> CallbackRouteError -> error=Configuration. Declaring the issuer
+      // makes the validation pass. Must be an exact match to GitHub's `iss` value.
+      issuer: "https://github.com/login/oauth",
       // GitHub App authorization - users select repositories during installation
       authorization: {
         url: "https://github.com/login/oauth/authorize",
