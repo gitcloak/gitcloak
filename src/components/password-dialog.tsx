@@ -103,7 +103,7 @@ export function PasswordDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="gap-0 rounded-none border-gc-border p-0 shadow-gc-popover sm:max-w-[26rem] sm:rounded-gc-lg"
+        className="gap-0 overflow-hidden rounded-gc-lg border-gc-border p-0 shadow-gc-popover sm:max-w-[26rem]"
         data-testid={`${testId}-dialog`}
         onOpenAutoFocus={(event) => {
           // Let the password input keep focus instead of the close button.

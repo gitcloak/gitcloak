@@ -33,6 +33,11 @@ All design tokens are defined once in `src/app/globals.css`:
 > shadcn/Tailwind in the dialogs. Both now consume the same tokens, so they are
 > visually identical. Prefer the idiom already used by the file you are editing.
 
+> **Global resets must stay inside `@layer base`.** Anything unlayered in
+> `globals.css` outranks the `utilities` layer in the CSS cascade, so a plain
+> `* { padding: 0 }` would defeat every `px-*`/`py-*` utility (this is what made
+> the dialogs look cramped).
+
 ---
 
 ## 2. Color
@@ -222,7 +227,7 @@ Structure — header → body → footer inside a single `<form>`, with `gap-0 p
 and blocks supplying their own padding:
 
 ```tsx
-<DialogContent className="gap-0 rounded-none border-gc-border p-0 shadow-gc-popover sm:max-w-[26rem] sm:rounded-gc-lg">
+<DialogContent className="gap-0 overflow-hidden rounded-gc-lg border-gc-border p-0 shadow-gc-popover sm:max-w-[26rem]">
   <form className="flex flex-col">
     {/* Header: 36px medallion + title + description */}
     <DialogHeader className="flex-row items-start gap-3 space-y-0 px-6 pt-6 pr-12 text-left">
@@ -275,6 +280,12 @@ Rules
   so the Playwright suite can drive the dialog.
 - Show a full-screen `LoadingOverlay` (with `role="status"`, `aria-busy`) for
   operations that block the UI (e.g. age KDF), not a spinner inside the button.
+- `overflow-hidden` on `DialogContent` clips the tinted footer to the dialog's
+  rounded corners.
+- The dialog relies on Tailwind's `px-*` / `py-*` utilities for its padding.
+  Global resets **must** live in `@layer base` (see §1) — an unlayered
+  `* { padding: 0 }` wins over the `utilities` layer and silently flattens every
+  dialog.
 
 ---
 
@@ -312,3 +323,4 @@ Rules
 | Inline alerts & toasts | `window.alert()` / `confirm()` |
 | Flat buttons | Drop shadows on buttons |
 | `rounded-gc-md` controls, `rounded-gc-lg` dialogs | Mixed/arbitrary radii |
+| Global resets inside `@layer base` | Unlayered `* { padding: 0 }` overrides |
