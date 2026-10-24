@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { FiAlertCircle, FiKey, FiLock, FiShield } from 'react-icons/fi'
 import { AppSidebar, type RepoStatus } from '@/components/app-sidebar'
 import { EditorArea } from '@/components/editor-area'
 import { LoadingOverlay } from '@/components/loading-overlay'
@@ -55,6 +56,7 @@ interface PasswordDialogState {
   submitLabel: string
   requireConfirmation: boolean
   testId: string
+  icon?: ReactNode
   onSubmit: (password: string) => void | Promise<void>
 }
 
@@ -157,6 +159,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
       submitLabel: 'Decrypt',
       requireConfirmation: false,
       testId: 'decrypt-error',
+      icon: <FiAlertCircle size={16} />,
       onSubmit: async (password: string) => {
         const { decryptWithPassword } = await import('@/lib/encryption')
         let decrypted: string
@@ -226,6 +229,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           submitLabel: 'Unlock',
           requireConfirmation: false,
           testId: 'unlock',
+          icon: <FiLock size={16} />,
           onSubmit: async (password: string) => {
             const isValid = await verifyPassword(check.content!, password)
             if (!isValid) {
@@ -446,6 +450,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           submitLabel: 'Set Password',
           requireConfirmation: true,
           testId: 'set-password',
+          icon: <FiShield size={16} />,
           onSubmit: async (newPassword: string) => {
             // Create .gitcloak file
             const gitcloakContent = await createGitCloakFile(newPassword)
@@ -490,6 +495,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           submitLabel: 'Save',
           requireConfirmation: false,
           testId: 'save-password',
+          icon: <FiKey size={16} />,
           onSubmit: async (enteredPassword: string) => {
             // Verify password
             const isValid = await verifyPassword(gitcloakCheck.content!, enteredPassword)
@@ -527,6 +533,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         submitLabel={passwordDialog.submitLabel}
         requireConfirmation={passwordDialog.requireConfirmation}
         testId={passwordDialog.testId}
+        icon={passwordDialog.icon}
         onSubmit={passwordDialog.onSubmit}
       />
       <InputDialog

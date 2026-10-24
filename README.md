@@ -180,6 +180,8 @@ gitcloak/
 │   │   └── github-app.ts      # GitHub API client
 │   └── auth.ts                # NextAuth configuration
 ├── public/                    # Static assets
+├── docs/                      # Documentation
+│   └── style-guide.md         # UI style guide (tokens & components)
 ├── tests/e2e/                 # Playwright end-to-end tests
 ├── .env.local                 # Environment variables (not in git)
 ├── package.json
@@ -259,7 +261,8 @@ npm run test:e2e
 The suite boots `next dev` on port 3100 with `FILE_BACKEND=mock` (see
 `playwright.config.ts`), resets the backend before every test and verifies the
 landing page, repository selector, lock/unlock flow, file tree, editor,
-decryption with an alternative password and creating/saving encrypted files.
+decryption with an alternative password, creating/saving encrypted files, and
+that the [style guide](docs/style-guide.md) is applied to the unlock popup.
 
 ## Contributing
 
@@ -268,6 +271,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ### Development Guidelines
 
 - Use TypeScript for type safety
+- Follow the [style guide](docs/style-guide.md) for all UI changes
 - Follow the existing code style
 - Test your changes locally before submitting
 - Update documentation as needed

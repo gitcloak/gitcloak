@@ -62,10 +62,42 @@ a {
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* GitCloak style-guide tokens — see docs/style-guide.md */
+  --color-gc-surface: var(--gc-surface);
+  --color-gc-canvas: var(--gc-canvas);
+  --color-gc-canvas-subtle: var(--gc-canvas-subtle);
+  --color-gc-border: var(--gc-border);
+  --color-gc-border-strong: var(--gc-border-strong);
+  --color-gc-fg: var(--gc-fg);
+  --color-gc-fg-muted: var(--gc-fg-muted);
+  --color-gc-fg-subtle: var(--gc-fg-subtle);
+  --color-gc-success: var(--gc-success);
+  --color-gc-success-hover: var(--gc-success-hover);
+  --color-gc-success-bg: var(--gc-success-bg);
+  --color-gc-success-fg: var(--gc-success-fg);
+  --color-gc-danger: var(--gc-danger);
+  --color-gc-danger-bg: var(--gc-danger-bg);
+  --color-gc-danger-fg: var(--gc-danger-fg);
+  --color-gc-accent: var(--gc-accent);
+  --color-gc-brand: var(--gc-brand);
+  --color-gc-brand-alt: var(--gc-brand-alt);
+  --radius-gc-sm: var(--gc-radius-sm);
+  --radius-gc-md: var(--gc-radius-md);
+  --radius-gc-lg: var(--gc-radius-lg);
+  --radius-gc-pill: var(--gc-radius-pill);
+  --shadow-gc-popover: var(--gc-shadow-popover);
+  --shadow-gc-card: var(--gc-shadow-card);
 }
 
 :root {
-  --radius: 0.625rem;
+  /*
+   * Base radius for the shadcn primitives. Set so the derived scale matches the
+   * GitCloak style guide (docs/style-guide.md):
+   *   --radius-sm = 4px, --radius-md = 6px, --radius-lg = 8px
+   * This lines the dialog/form layer up with the app shell's 6px controls.
+   */
+  --radius: 0.5rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -97,6 +129,40 @@ a {
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /*
+   * GitCloak design tokens (docs/style-guide.md).
+   *
+   * These capture the GitHub-flavoured palette used throughout the app shell
+   * (sidebar, editor, file tree, notices) so the dialog layer can share the
+   * exact same values. Consume them through the Tailwind utilities that are
+   * mapped in the `@theme inline` block above (e.g. `bg-gc-canvas`), or via
+   * `var(--gc-*)` from inline style objects.
+   */
+  --gc-surface: #ffffff;
+  --gc-canvas: #f6f8fa;
+  --gc-canvas-subtle: #fafbfc;
+  --gc-border: #e1e4e8;
+  --gc-border-strong: #d0d7de;
+  --gc-fg: #24292e;
+  --gc-fg-muted: #57606a;
+  --gc-fg-subtle: #8b949e;
+  --gc-success: #2ea44f;
+  --gc-success-hover: #2c974b;
+  --gc-success-bg: #dafbe1;
+  --gc-success-fg: #1a7f37;
+  --gc-danger: #cf222e;
+  --gc-danger-bg: #ffebe9;
+  --gc-danger-fg: #cf222e;
+  --gc-accent: #0969da;
+  --gc-brand: #667eea;
+  --gc-brand-alt: #764ba2;
+  --gc-radius-sm: 4px;
+  --gc-radius-md: 6px;
+  --gc-radius-lg: 8px;
+  --gc-radius-pill: 999px;
+  --gc-shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --gc-shadow-card: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .dark {

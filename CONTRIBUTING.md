@@ -54,7 +54,9 @@ See the [Installation](README.md#installation) section in the README.
 - Use TypeScript for all new code
 - Follow the existing code organization
 - Use functional components with hooks
-- Prefer inline styles (existing pattern)
+- Follow the [style guide](docs/style-guide.md) for colors, spacing, typography and component blocks
+  - The app shell uses inline style objects consuming `var(--gc-*)` tokens
+  - Dialogs/forms use Tailwind utilities mapped to the same tokens (e.g. `bg-gc-canvas`)
 - Use meaningful variable and function names
 - Add JSDoc comments for complex functions
 
