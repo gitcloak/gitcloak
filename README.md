@@ -232,6 +232,18 @@ backend also exposes test-only endpoints (`POST /api/test/reset` and
 `GET /api/test/state`) which return `404` whenever the mock backend is not
 active.
 
+### Vercel preview deployments
+
+Preview deployments automatically use the mock backend (unless `FILE_BACKEND`
+is explicitly set). Preview hostnames change on every deploy so they cannot be
+registered as GitHub OAuth callbacks, and the GitHub/Auth environment variables
+are scoped to Production — without a fallback Auth.js would refuse to start and
+show the *"There is a problem with the server configuration"* error on
+`/api/auth/error`. Running previews on the mock backend keeps them usable as a
+full UI demo. To run a preview against real GitHub instead, set `FILE_BACKEND=git`
+in the Preview environment together with the GitHub/Auth variables and add the
+branch alias callback URL to the GitHub App.
+
 ## End-to-End Tests
 
 The frontend is covered by Playwright tests that run the real Next.js app
