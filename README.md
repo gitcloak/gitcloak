@@ -182,7 +182,9 @@ gitcloak/
 ├── public/                    # Static assets
 ├── docs/                      # Documentation
 │   └── style-guide.md         # UI style guide (tokens & components)
-├── tests/e2e/                 # Playwright end-to-end tests
+├── tests/
+│   ├── unit/                  # Vitest unit tests (crypto helpers)
+│   └── e2e/                   # Playwright end-to-end tests
 ├── .env.local                 # Environment variables (not in git)
 ├── package.json
 ├── tsconfig.json
@@ -261,8 +263,24 @@ npm run test:e2e
 The suite boots `next dev` on port 3100 with `FILE_BACKEND=mock` (see
 `playwright.config.ts`), resets the backend before every test and verifies the
 landing page, repository selector, lock/unlock flow, file tree, editor,
-decryption with an alternative password, creating/saving encrypted files, and
-that the [style guide](docs/style-guide.md) is applied to the unlock popup.
+decryption with an alternative password, creating/saving encrypted files, a
+full encrypt-on-save → reload → decrypt round trip (asserting the plaintext is
+never stored), and that the [style guide](docs/style-guide.md) is applied to
+the unlock popup.
+
+## Unit Tests
+
+The pure library code is covered by [Vitest](https://vitest.dev) unit tests:
+
+```bash
+npm run test:unit        # single run
+npm run test:unit:watch  # watch mode
+```
+
+These target `src/lib/encryption.ts` (age encrypt/decrypt round trips, armored
+output, fresh-salt non-determinism, wrong-password and tamper rejection,
+unicode/empty content) and `src/lib/gitcloak.ts` (`.gitcloak` verification file
+creation and password verification). Run everything with `npm test`.
 
 ## Contributing
 

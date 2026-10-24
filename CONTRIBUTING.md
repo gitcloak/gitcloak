@@ -38,6 +38,8 @@ Be respectful, inclusive, and professional in all interactions.
 3. **Test your changes**:
    - Run `npm run dev` to test locally
    - Run `npm run build` to ensure it builds successfully
+   - Run `npm test` (unit + end-to-end tests), or `npm run test:unit` /
+     `npm run test:e2e` individually
    - Test the functionality manually
 4. **Commit your changes**:
    - Use clear, descriptive commit messages
@@ -80,7 +82,15 @@ src/
 
 ## Testing
 
-Currently, testing is manual. Contributions to add automated testing are welcome!
+Automated tests live under `tests/`:
+
+- `tests/unit/` — Vitest unit tests for the pure libraries
+  (`npm run test:unit`).
+- `tests/e2e/` — Playwright end-to-end tests that drive the real UI against
+  the mock backend (`npm run test:e2e`).
+
+Run both with `npm test`. Please add or update tests for any behaviour change;
+end-to-end tests should not depend on GitHub credentials or the network.
 
 ## Questions?
 
