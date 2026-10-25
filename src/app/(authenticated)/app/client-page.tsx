@@ -444,14 +444,21 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
 
       const result = await response.json()
 
-      // Update selected file with new sha, path, content and remove isNew flag
-      setSelectedFile({
-        ...selectedFile,
-        content: content,
-        sha: result.sha,
-        path: savePath,
-        isNew: false,
-      })
+      // Update selected file with new sha, path, content and remove isNew flag.
+      // The save may finish after the user opened another file, so only update
+      // the file that is still open. Otherwise the old file would replace it.
+      const openId = selectedFile.openId
+      setSelectedFile(current =>
+        current?.openId === openId
+          ? {
+              ...current,
+              content: content,
+              sha: result.sha,
+              path: savePath,
+              isNew: false,
+            }
+          : current
+      )
 
       showNotice('success', `Saved ${savePath}`)
       // Refresh the file tree so newly created files show up immediately.

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Clock, PenLine, Save } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -45,76 +45,79 @@ export function EditorArea({
   // The parent keys this component by `openId`, so each opened file starts
   // with fresh state. Saving does not remount the editor, which keeps text the
   // user types while a save is in flight.
+  // `content` is what the user sees and is never blocked by a save.
+  // `savedContent` is the last snapshot that reached GitHub.
   const [content, setContent] = useState(selectedFile?.content ?? '')
-  const [hasChanges, setHasChanges] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
   const [savedContent, setSavedContent] = useState(selectedFile?.content ?? '')
+  // The snapshot waiting for the save slot. Only one save runs at a time, and
+  // a newer snapshot replaces an older queued one because each save writes the
+  // whole file. Keystrokes therefore never queue up as separate saves.
+  const [queued, setQueued] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
   // Set when an autosave fails. Autosave waits for the next edit before trying
   // again, instead of retrying and showing an error every few seconds.
   const [autosaveFailed, setAutosaveFailed] = useState(false)
 
+  const hasChanges = content !== savedContent
+  const hasFile = Boolean(selectedFile)
+
   const handleContentChange = (newContent: string) => {
     setContent(newContent)
-    setHasChanges(newContent !== savedContent)
     setAutosaveFailed(false)
   }
 
-  const handleSave = useCallback(
-    async (source: 'manual' | 'autosave' = 'manual') => {
-      // Take a snapshot of the content to save
-      const contentToSave = content
-      const previousSaved = savedContent
-      setSavedContent(contentToSave)
-      setHasChanges(false)
-      setAutosaveFailed(false)
-      setIsSaving(true)
-
-      // Save in background
-      try {
-        await onSave(contentToSave)
-      } catch {
-        // The snapshot never reached GitHub, so keep the last saved baseline
-        // and treat the edit as still unsaved.
-        setSavedContent(previousSaved)
-        setHasChanges(contentToSave !== previousSaved)
-        setAutosaveFailed(source === 'autosave')
-      } finally {
-        setIsSaving(false)
-      }
-    },
-    [content, onSave, savedContent]
-  )
-
-  const hasFile = Boolean(selectedFile)
-
-  // Debounced autosave: every keystroke changes `handleSave`, which restarts
-  // the timer, so the save runs once the user pauses.
+  // Autosave: once typing pauses, queue the current text. Every keystroke
+  // restarts the timer, and typing while a save runs does not stop it.
   useEffect(() => {
     if (
       !autosave ||
       !canAutosave ||
       !hasFile ||
       !hasChanges ||
-      isSaving ||
       isLoading ||
       autosaveFailed
     ) {
       return
     }
-    const timer = window.setTimeout(() => {
-      void handleSave('autosave')
-    }, AUTOSAVE_DELAY_MS)
+    const timer = window.setTimeout(() => setQueued(content), AUTOSAVE_DELAY_MS)
     return () => window.clearTimeout(timer)
   }, [
     autosave,
     canAutosave,
     hasFile,
     hasChanges,
-    isSaving,
     isLoading,
     autosaveFailed,
-    handleSave,
+    content,
   ])
+
+  // Run the queued snapshot once the previous save has finished. Running it
+  // from an effect means `onSave` comes from the render that already holds the
+  // new file SHA, so consecutive saves do not conflict on GitHub.
+  useEffect(() => {
+    if (isSaving || queued === null) return
+    if (queued === savedContent) {
+      // Already saved (e.g. the text was typed back, or the timer fired during
+      // a save of the same text).
+      setQueued(null)
+      return
+    }
+
+    const snapshot = queued
+    setQueued(null)
+    setIsSaving(true)
+    void onSave(snapshot)
+      .then(() => {
+        setSavedContent(snapshot)
+        setAutosaveFailed(false)
+      })
+      .catch(() => {
+        // The snapshot never reached GitHub, so `savedContent` still holds the
+        // last saved text and the edit stays unsaved.
+        setAutosaveFailed(true)
+      })
+      .finally(() => setIsSaving(false))
+  }, [isSaving, queued, savedContent, onSave])
 
   const canSave = Boolean(selectedFile) && hasChanges && !isSaving
 
@@ -164,7 +167,7 @@ export function EditorArea({
           data-state={
             !selectedFile ? 'empty' : hasChanges ? 'dirty' : 'clean'
           }
-          onClick={() => void handleSave()}
+          onClick={() => setQueued(content)}
           disabled={!canSave}
           variant={canSave ? 'default' : 'outline'}
           size="sm"

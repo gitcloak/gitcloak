@@ -87,6 +87,52 @@ test.describe('Autosave', () => {
     await expectEditor(page, FILE, EDITED)
   })
 
+  test('keeps accepting edits while a save is in flight and saves the latest text', async ({
+    page,
+  }) => {
+    // Hold the first save open so that edits land while it is in flight.
+    let releaseFirstSave!: () => void
+    const firstSaveHeld = new Promise<void>((resolve) => {
+      releaseFirstSave = resolve
+    })
+    let saveRequests = 0
+    await page.route('**/api/repos/*/*/save', async (route) => {
+      saveRequests += 1
+      if (saveRequests === 1) await firstSaveHeld
+      await route.continue()
+    })
+
+    await gotoApp(page)
+    await setAutosave(page, true)
+    await unlockRepo(page)
+    await clickFileNode(page, FILE)
+    await expectEditor(page, FILE)
+
+    const editor = page.getByTestId('editor-input')
+    await editor.fill('# Welcome\n\nFirst.\n')
+    await expect(page.getByTestId('editor-status')).toHaveAttribute('data-status', 'saving')
+
+    // Typing while the save is still running must not be blocked or reverted.
+    await editor.fill('# Welcome\n\nFirst.\nSecond.\n')
+    await expect(editor).toHaveValue('# Welcome\n\nFirst.\nSecond.\n')
+
+    releaseFirstSave()
+    await expect(page.getByTestId('editor-status')).toHaveAttribute('data-status', 'saved', {
+      timeout: 20_000,
+    })
+    await expect(editor).toHaveValue('# Welcome\n\nFirst.\nSecond.\n')
+
+    // The latest text, not the snapshot taken when the first save started, is
+    // what ends up stored.
+    await page.unroute('**/api/repos/*/*/save')
+    await page.reload()
+    await gotoApp(page)
+    await clickFileNode(page, FILE)
+    await submitPassword(page, 'unlock', PASSWORD)
+    await expectEditor(page, FILE, '# Welcome\n\nFirst.\nSecond.\n')
+    expect(saveRequests).toBeGreaterThanOrEqual(2)
+  })
+
   test('never opens a password dialog while the repository is locked', async ({ page }) => {
     await gotoApp(page)
     await setAutosave(page, true)
