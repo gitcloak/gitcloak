@@ -22,7 +22,7 @@ export class GitHubAppClient {
     if (!privateKey.includes('BEGIN')) {
       try {
         decodedKey = Buffer.from(privateKey, 'base64').toString('utf-8')
-      } catch (error) {
+      } catch {
         // If base64 decode fails, use the key as-is
         decodedKey = privateKey
       }
@@ -59,16 +59,26 @@ export class GitHubAppClient {
     try {
       const { data } = await octokit.request("GET /user/installations")
 
-      return data.installations.map((installation: any) => ({
-        id: installation.id,
-        account: {
-          login: installation.account.login,
-          type: installation.account.type,
-          avatarUrl: installation.account.avatar_url,
-        },
-        repositorySelection: installation.repository_selection,
-        permissions: installation.permissions,
-      }))
+      return data.installations.map((installation) => {
+        // The wire payload always carries `login` and `type`, but Octokit's
+        // union type for `account` only declares them on the user shape.
+        const account = installation.account as {
+          login?: string
+          type?: string
+          avatar_url?: string
+        } | null
+
+        return {
+          id: installation.id,
+          account: {
+            login: account?.login ?? '',
+            type: account?.type ?? '',
+            avatarUrl: account?.avatar_url ?? '',
+          },
+          repositorySelection: installation.repository_selection,
+          permissions: installation.permissions,
+        }
+      })
     } catch (error) {
       throw new Error(`Failed to get installations: ${error}`)
     }
@@ -84,7 +94,7 @@ export class GitHubAppClient {
 
       const { data } = await octokit.request("GET /installation/repositories")
 
-      return data.repositories.map((repo: any) => ({
+      return data.repositories.map((repo) => ({
         id: repo.id,
         name: repo.name,
         fullName: repo.full_name,
@@ -187,7 +197,7 @@ export class GitHubAppClient {
       })
 
       if (Array.isArray(data)) {
-        return data.map((item: any) => ({
+        return data.map((item) => ({
           name: item.name,
           path: item.path,
           type: item.type as 'file' | 'dir',

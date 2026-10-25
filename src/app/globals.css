@@ -1,33 +1,30 @@
 @import "tailwindcss";
-@plugin "tailwindcss-animate";
+/*
+ * Tailwind v4 entry/exit animations. `tw-animate-css` is the official v4
+ * successor to `tailwindcss-animate` (a v3-era plugin).
+ *
+ * The v3 plugin animated the `transform` property, which composes with — rather
+ * than replaces — Tailwind v4's standalone `translate`/`scale` properties. That
+ * mismatch is what made the unlock dialog fly in from the top-left corner; see
+ * the comment in `src/components/ui/dialog.tsx`.
+ */
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
 
 /*
- * Base reset. Keep this inside `@layer base` so Tailwind utilities (which live
- * in the `utilities` layer) can override it. An unlayered rule here would win
- * over every padding/margin utility and silently strip e.g. `DialogContent`'s
- * `p-6`.
+ * Base reset. Kept inside `@layer base` so Tailwind utilities (which live in the
+ * `utilities` layer) can override it. An unlayered rule here would win over
+ * every padding/margin utility and silently strip e.g. `DialogContent`'s `p-6`.
+ *
+ * Preflight (bundled by `@import "tailwindcss"`) already zeroes margin/padding
+ * and sets `box-sizing: border-box`, so only anchors need a rule of their own —
+ * and they must NOT hard-code a light-theme text colour, or dark mode breaks.
  */
 @layer base {
-  * {
-    box-sizing: border-box;
-    padding: 0;
-    margin: 0;
-  }
-
-  html,
-  body {
-    max-width: 100vw;
-    overflow-x: hidden;
-  }
-
-  body {
-    color: #333;
-    background: #fff;
-  }
-
   a {
     color: inherit;
-    text-decoration: none;
+    text-decoration: inherit;
   }
 }
 
@@ -87,6 +84,9 @@
   --color-gc-danger: var(--gc-danger);
   --color-gc-danger-bg: var(--gc-danger-bg);
   --color-gc-danger-fg: var(--gc-danger-fg);
+  --color-gc-warning: var(--gc-warning);
+  --color-gc-warning-bg: var(--gc-warning-bg);
+  --color-gc-warning-fg: var(--gc-warning-fg);
   --color-gc-accent: var(--gc-accent);
   --color-gc-brand: var(--gc-brand);
   --color-gc-brand-alt: var(--gc-brand-alt);
@@ -162,6 +162,9 @@
   --gc-danger: #cf222e;
   --gc-danger-bg: #ffebe9;
   --gc-danger-fg: #cf222e;
+  --gc-warning: #d4a72c;
+  --gc-warning-bg: #fff8c5;
+  --gc-warning-fg: #7d4e00;
   --gc-accent: #0969da;
   --gc-brand: #667eea;
   --gc-brand-alt: #764ba2;
@@ -205,6 +208,33 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /*
+   * Dark-theme overrides for the GitCloak palette. Without these the `.dark`
+   * class only re-mapped the shadcn tokens and every `gc-` utility kept painting
+   * light-theme colours.
+   */
+  --gc-surface: #0d1117;
+  --gc-canvas: #161b22;
+  --gc-canvas-subtle: #21262d;
+  --gc-border: #30363d;
+  --gc-border-strong: #3d444d;
+  --gc-fg: #e6edf3;
+  --gc-fg-muted: #8b949e;
+  --gc-fg-subtle: #6e7681;
+  --gc-success: #238636;
+  --gc-success-hover: #2ea043;
+  --gc-success-bg: #12261e;
+  --gc-success-fg: #3fb950;
+  --gc-danger: #f85149;
+  --gc-danger-bg: #25171c;
+  --gc-danger-fg: #f85149;
+  --gc-warning: #9e6a03;
+  --gc-warning-bg: #3a2d00;
+  --gc-warning-fg: #d29922;
+  --gc-accent: #2f81f7;
+  --gc-shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --gc-shadow-card: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 @layer base {

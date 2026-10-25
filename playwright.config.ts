@@ -27,6 +27,10 @@ export default defineConfig({
     channel: 'chrome',
     baseURL: BASE_URL,
     headless: true,
+    // Pin the colour scheme: the shell ships a dark theme via `next-themes`
+    // (defaultTheme="system"), and the computed-style assertions in
+    // style-guide.spec.ts only hold in the light theme.
+    colorScheme: 'light',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

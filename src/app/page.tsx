@@ -1,9 +1,43 @@
 'use client'
 
-import { AuthButton } from "@/components/auth-button"
-import { useSession } from "next-auth/react"
-import { useRouter } from "next/navigation"
-import { useEffect } from "react"
+import { useEffect } from 'react'
+import {
+  Github,
+  KeyRound,
+  Layers,
+  ShieldCheck,
+  WifiOff,
+} from 'lucide-react'
+import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
+
+import { AuthButton } from '@/components/auth-button'
+import { ThemeToggle } from '@/components/theme-toggle'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
+
+const FEATURES = [
+  {
+    icon: ShieldCheck,
+    title: 'Client-side encryption',
+    description: 'Files are encrypted with the age format in your browser.',
+  },
+  {
+    icon: KeyRound,
+    title: 'Zero-knowledge',
+    description: 'Your encryption key never leaves your browser.',
+  },
+  {
+    icon: Layers,
+    title: 'GitHub OAuth',
+    description: 'Sign in with GitHub — no separate account to manage.',
+  },
+  {
+    icon: WifiOff,
+    title: 'No vendor lock-in',
+    description: 'Plain .age files in your own repositories.',
+  },
+]
 
 export default function Home() {
   const { data: session, status } = useSession()
@@ -21,130 +55,74 @@ export default function Home() {
   }
 
   return (
-    <main style={{
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      minHeight: "100vh",
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      padding: "2rem"
-    }}>
-      <div style={{
-        maxWidth: "600px",
-        textAlign: "center"
-      }}>
-        <h1 style={{
-          fontSize: "3rem",
-          marginBottom: "1rem",
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-          WebkitBackgroundClip: "text",
-          WebkitTextFillColor: "transparent",
-          fontWeight: "bold"
-        }}>
-          GitCloak 🔐
-        </h1>
-
-        <p style={{
-          fontSize: "1.25rem",
-          color: "#666",
-          marginBottom: "2rem",
-          lineHeight: "1.6"
-        }}>
-          Secure, encrypted markdown editing for GitHub repositories
-        </p>
-
-        <div style={{
-          backgroundColor: "#f8f9fa",
-          padding: "1.5rem",
-          borderRadius: "8px",
-          marginBottom: "2rem",
-          textAlign: "left"
-        }}>
-          <h2 style={{
-            fontSize: "1.1rem",
-            marginBottom: "1rem",
-            color: "#333"
-          }}>
-            Features:
-          </h2>
-          <ul style={{
-            listStyle: "none",
-            padding: 0,
-            margin: 0,
-            color: "#555",
-            lineHeight: "2"
-          }}>
-            <li>✓ Client-side encryption (age format)</li>
-            <li>✓ Zero-knowledge architecture</li>
-            <li>✓ GitHub OAuth integration</li>
-            <li>✓ No vendor lock-in</li>
-          </ul>
+    <div className="flex min-h-svh flex-col">
+      <header className="flex items-center justify-between gap-4 px-4 py-4 sm:px-8">
+        <div className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <ShieldCheck className="size-4" />
+          </span>
+          <span className="text-lg font-bold tracking-tight">GitCloak</span>
         </div>
-
-        <div style={{ marginTop: "2rem" }}>
-          <AuthButton />
-        </div>
-
-        <p style={{
-          marginTop: "2rem",
-          fontSize: "0.875rem",
-          color: "#999"
-        }}>
-          Your encryption key never leaves your browser
-        </p>
-
-        <div style={{
-          marginTop: "3rem",
-          paddingTop: "2rem",
-          borderTop: "1px solid #e1e4e8",
-          textAlign: "center"
-        }}>
-          <p style={{
-            fontSize: "1rem",
-            color: "#555",
-            marginBottom: "1rem",
-            lineHeight: "1.6"
-          }}>
-            GitCloak is an open source project
-          </p>
+        <div className="flex items-center gap-2">
           <a
             href="https://github.com/gitcloak/gitcloak"
             target="_blank"
             rel="noopener noreferrer"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              padding: "0.75rem 1.25rem",
-              fontSize: "1rem",
-              color: "#24292e",
-              textDecoration: "none",
-              border: "1px solid #d1d5db",
-              borderRadius: "6px",
-              transition: "all 0.2s",
-              fontWeight: "500"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#f6f8fa"
-              e.currentTarget.style.borderColor = "#0366d6"
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent"
-              e.currentTarget.style.borderColor = "#d1d5db"
-            }}
+            aria-label="View GitCloak on GitHub"
           >
-            <svg
-              style={{ width: "20px", height: "20px" }}
-              viewBox="0 0 16 16"
-              fill="currentColor"
-            >
-              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
-            </svg>
+            <Badge variant="outline" className="gap-1.5 px-2.5 py-1">
+              <Github className="size-3.5" />
+              <span className="hidden sm:inline">Open source</span>
+              <span className="sm:hidden">GitHub</span>
+            </Badge>
+          </a>
+          <ThemeToggle />
+        </div>
+      </header>
+
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center gap-12 px-4 py-12 sm:px-8 sm:py-16">
+        <div className="flex max-w-2xl flex-col items-center gap-6 text-center">
+          <Badge variant="secondary">Encrypted markdown for GitHub</Badge>
+          <h1 className="bg-gradient-to-br from-indigo-500 to-purple-600 bg-clip-text text-4xl font-bold tracking-tight text-transparent sm:text-5xl md:text-6xl">
+            GitCloak
+          </h1>
+          <p className="text-balance text-lg leading-relaxed text-muted-foreground sm:text-xl">
+            Secure, encrypted markdown editing for GitHub repositories.
+          </p>
+          <div className="pt-2">
+            <AuthButton />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Your encryption key never leaves your browser
+          </p>
+        </div>
+
+        <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {FEATURES.map((feature) => (
+            <Card key={feature.title} className="gap-2 py-5">
+              <CardContent className="flex flex-col gap-2 px-5">
+                <feature.icon className="size-5 text-primary" />
+                <h2 className="text-sm font-semibold">{feature.title}</h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {feature.description}
+                </p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <p className="text-sm text-muted-foreground">
+          GitCloak is an open source project ·{' '}
+          <a
+            href="https://github.com/gitcloak/gitcloak"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-foreground underline underline-offset-4"
+          >
             View on GitHub
           </a>
-        </div>
-      </div>
-    </main>
-  );
+        </p>
+      </main>
+    </div>
+  )
 }

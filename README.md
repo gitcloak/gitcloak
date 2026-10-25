@@ -14,6 +14,8 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 - **Interoperable**: Uses age format - decrypt your files anywhere with age-compatible tools
 - **Real-time Editing**: Edit files with live status updates and background saving
 - **File Tree Navigation**: Browse and manage your repository files easily
+- **Responsive Shell**: Collapsible sidebar that becomes an off-canvas sheet on mobile
+- **Dark Mode**: Light/dark/system themes via `next-themes`
 - **GitHub OAuth**: Secure authentication through GitHub
 
 ## How It Works
@@ -43,8 +45,10 @@ Your files remain in your GitHub repository, but they're encrypted at rest. Only
 - **Authentication**: NextAuth.js v5 with GitHub OAuth
 - **Encryption**: [age-encryption](https://www.npmjs.com/package/age-encryption) (WebAssembly)
 - **GitHub API**: Octokit
-- **Styling**: Inline styles with React
-- **Icons**: React Icons (Feather)
+- **Styling**: Tailwind CSS v4 + [shadcn/ui](https://ui.shadcn.com) (`new-york`)
+- **Icons**: [lucide-react](https://lucide.dev)
+- **Primitives**: [Radix UI](https://www.radix-ui.com) (via the unified `radix-ui` package)
+- **Theming**: `next-themes` (light / dark / system)
 
 ## Installation
 
@@ -168,10 +172,12 @@ gitcloak/
 │   │   ├── layout.tsx         # Root layout
 │   │   └── page.tsx           # Landing page
 │   ├── components/            # React components
+│   │   ├── ui/                # shadcn/ui primitives (button, dialog, sidebar, …)
 │   │   ├── app-sidebar.tsx    # Sidebar with file tree
 │   │   ├── editor-area.tsx    # File editor
 │   │   ├── file-tree.tsx      # Repository file browser
 │   │   └── ...
+│   ├── hooks/                 # Shared React hooks (use-mobile)
 │   ├── lib/                   # Utility libraries
 │   │   ├── backends/          # Storage backends (git / mock)
 │   │   ├── encryption.ts      # Age encryption/decryption
@@ -283,6 +289,17 @@ These target `src/lib/encryption.ts` (age encrypt/decrypt round trips, armored
 output, fresh-salt non-determinism, wrong-password and tamper rejection,
 unicode/empty content) and `src/lib/gitcloak.ts` (`.gitcloak` verification file
 creation and password verification). Run everything with `npm test`.
+
+## Linting
+
+ESLint runs through its own CLI (`next lint` is deprecated in Next 15 and
+removed in Next 16) against the flat config in `eslint.config.mjs`, which
+bridges `next/core-web-vitals` and `next/typescript` in via `FlatCompat`:
+
+```bash
+npm run lint       # check
+npm run lint:fix   # check and autofix
+```
 
 ## Contributing
 

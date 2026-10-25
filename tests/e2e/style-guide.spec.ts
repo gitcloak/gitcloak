@@ -16,7 +16,21 @@ test.describe('Style guide applied to the unlock popup', () => {
     // Header medallion (style guide §6.7).
     await expect(page.getByTestId('unlock-icon')).toBeVisible()
 
-    const styles = await page.getByTestId('unlock-dialog').evaluate((dialog) => {
+    const dialog = page.getByTestId('unlock-dialog')
+    const input = page.getByTestId('unlock-input')
+
+    // The dialog auto-focuses the first field, and the guide (§6.7) specifies a
+    // `--gc-accent` focus ring — assert it while the field still has focus.
+    await expect(input).toBeFocused()
+    expect(await input.evaluate((el) => getComputedStyle(el).borderTopColor)).toBe(
+      'rgb(9, 105, 218)' // --gc-accent
+    )
+
+    // …then blur, so the assertions below describe the *resting* appearance.
+    await input.blur()
+    await expect(input).not.toBeFocused()
+
+    const styles = await dialog.evaluate((dialog) => {
       const pick = (selector: string) =>
         getComputedStyle(dialog.querySelector(selector) as HTMLElement)
       const dialogStyle = getComputedStyle(dialog)

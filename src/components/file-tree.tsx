@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { FiFile, FiChevronRight, FiChevronDown, FiMoreHorizontal } from 'react-icons/fi'
+import { useCallback, useState, useEffect } from 'react'
+import { ChevronDown, ChevronRight, Ellipsis, File as FileIcon } from 'lucide-react'
+
+import { cn } from '@/lib/utils'
 
 interface TreeNode {
   name: string
@@ -54,12 +56,14 @@ function TreeItem({
         const data = await response.json()
 
         // Sort: directories first, then files, alphabetically
-        const sorted = (Array.isArray(data) ? data : []).sort((a: TreeNode, b: TreeNode) => {
-          if (a.type === b.type) {
-            return a.name.localeCompare(b.name)
+        const sorted = (Array.isArray(data) ? data : []).sort(
+          (a: TreeNode, b: TreeNode) => {
+            if (a.type === b.type) {
+              return a.name.localeCompare(b.name)
+            }
+            return a.type === 'dir' ? -1 : 1
           }
-          return a.type === 'dir' ? -1 : 1
-        })
+        )
 
         setChildren(sorted)
       } catch (error) {
@@ -72,7 +76,6 @@ function TreeItem({
     setIsExpanded(!isExpanded)
   }
 
-  const paddingLeft = `${level * 12 + 8}px`
   const isSelected = node.type === 'file' && node.path === selectedFilePath
 
   return (
@@ -83,45 +86,31 @@ function TreeItem({
         data-node-type={node.type}
         data-selected={isSelected}
         onClick={handleToggle}
-        style={{
-          paddingLeft,
-          paddingRight: '8px',
-          paddingTop: '4px',
-          paddingBottom: '4px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          fontSize: '13px',
-          color: '#24292e',
-          transition: 'background-color 0.1s',
-          backgroundColor: isSelected ? '#e8f0fe' : 'transparent',
-          fontWeight: isSelected ? '500' : 'normal',
-        }}
-        onMouseEnter={(e) => {
-          if (!isSelected) {
-            e.currentTarget.style.backgroundColor = '#f6f8fa'
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (!isSelected) {
-            e.currentTarget.style.backgroundColor = 'transparent'
-          }
-        }}
+        style={{ paddingLeft: `${level * 12 + 6}px` }}
+        className={cn(
+          'flex cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 text-[13px] transition-colors',
+          'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+          isSelected
+            ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+            : 'text-sidebar-foreground'
+        )}
       >
-        {node.type === 'dir' && (
-          <span style={{ width: '12px', display: 'flex', alignItems: 'center', color: '#666' }}>
-            {isLoading ? <FiMoreHorizontal size={12} /> : isExpanded ? <FiChevronDown size={12} /> : <FiChevronRight size={12} />}
+        {node.type === 'dir' ? (
+          <span className="flex w-3 shrink-0 items-center justify-center text-muted-foreground">
+            {isLoading ? (
+              <Ellipsis className="size-3" />
+            ) : isExpanded ? (
+              <ChevronDown className="size-3" />
+            ) : (
+              <ChevronRight className="size-3" />
+            )}
+          </span>
+        ) : (
+          <span className="flex w-3 shrink-0 items-center justify-center text-muted-foreground">
+            <FileIcon className="size-3" />
           </span>
         )}
-        {node.type === 'file' && (
-          <span style={{ width: '12px', display: 'flex', alignItems: 'center', color: '#666' }}>
-            <FiFile size={12} />
-          </span>
-        )}
-        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {node.name}
-        </span>
+        <span className="truncate">{node.name}</span>
       </div>
 
       {isExpanded && children.length > 0 && (
@@ -143,30 +132,41 @@ function TreeItem({
   )
 }
 
-export function FileTree({ owner, repo, onFileSelect, onRefresh, selectedFilePath, onLoadingChange }: FileTreeProps) {
+export function FileTree({
+  owner,
+  repo,
+  onFileSelect,
+  onRefresh,
+  selectedFilePath,
+  onLoadingChange,
+}: FileTreeProps) {
   const [rootNodes, setRootNodes] = useState<TreeNode[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
 
-  const loadRootContents = async () => {
+  const loadRootContents = useCallback(async () => {
     setIsLoading(true)
     onLoadingChange?.(true)
     setError(null)
     try {
-      const response = await fetch(`/api/repos/${owner}/${repo}/contents?t=${Date.now()}`)
+      const response = await fetch(
+        `/api/repos/${owner}/${repo}/contents?t=${Date.now()}`
+      )
       if (!response.ok) {
         throw new Error('Failed to load repository contents')
       }
       const data = await response.json()
 
       // Sort: directories first, then files, alphabetically
-      const sorted = (Array.isArray(data) ? data : []).sort((a: TreeNode, b: TreeNode) => {
-        if (a.type === b.type) {
-          return a.name.localeCompare(b.name)
+      const sorted = (Array.isArray(data) ? data : []).sort(
+        (a: TreeNode, b: TreeNode) => {
+          if (a.type === b.type) {
+            return a.name.localeCompare(b.name)
+          }
+          return a.type === 'dir' ? -1 : 1
         }
-        return a.type === 'dir' ? -1 : 1
-      })
+      )
 
       setRootNodes(sorted)
       onRefresh?.()
@@ -177,32 +177,38 @@ export function FileTree({ owner, repo, onFileSelect, onRefresh, selectedFilePat
       setIsLoading(false)
       onLoadingChange?.(false)
     }
-  }
+  }, [owner, repo, onLoadingChange, onRefresh])
 
   useEffect(() => {
     loadRootContents()
-  }, [owner, repo, refreshTrigger])
+  }, [loadRootContents, refreshTrigger])
 
   // Expose refresh function
   useEffect(() => {
     // Store refresh function on window for parent to call
-    (window as any).__fileTreeRefresh = () => setRefreshTrigger(prev => prev + 1)
+    window.__fileTreeRefresh = () => setRefreshTrigger((prev) => prev + 1)
     return () => {
-      delete (window as any).__fileTreeRefresh
+      delete window.__fileTreeRefresh
     }
   }, [])
 
   if (isLoading) {
     return (
-      <div data-testid="file-tree-loading" style={{ padding: '1rem', color: '#666', fontSize: '13px' }}>
-        Loading files...
+      <div
+        data-testid="file-tree-loading"
+        className="px-2 py-4 text-[13px] text-muted-foreground"
+      >
+        Loading files…
       </div>
     )
   }
 
   if (error) {
     return (
-      <div data-testid="file-tree-error" style={{ padding: '1rem', color: '#d73a49', fontSize: '13px' }}>
+      <div
+        data-testid="file-tree-error"
+        className="px-2 py-4 text-[13px] text-destructive"
+      >
         {error}
       </div>
     )
@@ -210,14 +216,17 @@ export function FileTree({ owner, repo, onFileSelect, onRefresh, selectedFilePat
 
   if (rootNodes.length === 0) {
     return (
-      <div data-testid="file-tree-empty" style={{ padding: '1rem', color: '#666', fontSize: '13px' }}>
+      <div
+        data-testid="file-tree-empty"
+        className="px-2 py-4 text-[13px] text-muted-foreground"
+      >
         No files found
       </div>
     )
   }
 
   return (
-    <div style={{ overflow: 'auto' }}>
+    <div className="flex flex-col gap-px">
       {rootNodes.map((node) => (
         <TreeItem
           key={node.path}

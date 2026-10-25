@@ -1,13 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { FiAlertCircle, FiKey, FiLock, FiShield } from 'react-icons/fi'
+import { AlertCircle, KeyRound, Lock, ShieldCheck } from 'lucide-react'
 import { AppSidebar, type RepoStatus } from '@/components/app-sidebar'
 import { EditorArea } from '@/components/editor-area'
 import { LoadingOverlay } from '@/components/loading-overlay'
 import { PasswordDialog } from '@/components/password-dialog'
 import { InputDialog } from '@/components/input-dialog'
 import { NoticeToast, type Notice } from '@/components/notice-toast'
+import { SidebarInset } from '@/components/ui/sidebar'
 
 interface Repository {
   id: number
@@ -159,7 +160,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
       submitLabel: 'Decrypt',
       requireConfirmation: false,
       testId: 'decrypt-error',
-      icon: <FiAlertCircle size={16} />,
+      icon: <AlertCircle className="size-4" />,
       onSubmit: async (password: string) => {
         const { decryptWithPassword } = await import('@/lib/encryption')
         let decrypted: string
@@ -229,7 +230,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           submitLabel: 'Unlock',
           requireConfirmation: false,
           testId: 'unlock',
-          icon: <FiLock size={16} />,
+          icon: <Lock className="size-4" />,
           onSubmit: async (password: string) => {
             const isValid = await verifyPassword(check.content!, password)
             if (!isValid) {
@@ -433,7 +434,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
 
       showNotice('success', `Saved ${savePath}`)
       // Refresh the file tree so newly created files show up immediately.
-      ;(window as any).__fileTreeRefresh?.()
+      window.__fileTreeRefresh?.()
     }
 
     try {
@@ -450,7 +451,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           submitLabel: 'Set Password',
           requireConfirmation: true,
           testId: 'set-password',
-          icon: <FiShield size={16} />,
+          icon: <ShieldCheck className="size-4" />,
           onSubmit: async (newPassword: string) => {
             // Create .gitcloak file
             const gitcloakContent = await createGitCloakFile(newPassword)
@@ -495,7 +496,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           submitLabel: 'Save',
           requireConfirmation: false,
           testId: 'save-password',
-          icon: <FiKey size={16} />,
+          icon: <KeyRound className="size-4" />,
           onSubmit: async (enteredPassword: string) => {
             // Verify password
             const isValid = await verifyPassword(gitcloakCheck.content!, enteredPassword)
@@ -558,11 +559,13 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         repoStatus={repoStatus}
         selectedFilePath={selectedFile?.path}
       />
-      <EditorArea
-        selectedFile={selectedFile}
-        isLoading={isLoading}
-        onSave={handleSaveFile}
-      />
+      <SidebarInset className="min-w-0 overflow-hidden">
+        <EditorArea
+          selectedFile={selectedFile}
+          isLoading={isLoading}
+          onSave={handleSaveFile}
+        />
+      </SidebarInset>
     </>
   )
 }

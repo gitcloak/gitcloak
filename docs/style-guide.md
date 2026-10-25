@@ -10,33 +10,37 @@ it without guesswork.
 The **`Unlock Repository` dialog is the reference implementation** of the
 dialog block described below.
 
+The UI is built on **shadcn/ui** (`new-york` style, `src/components/ui/*`,
+backed by the unified `radix-ui` package and `lucide-react` icons). Prefer an
+existing `@/components/ui` primitive over a new hand-rolled one, and prefer a
+`--gc-*` utility over a hex value.
+
 ---
 
 ## 1. Where the tokens live
 
 All design tokens are defined once in `src/app/globals.css`:
 
-- As CSS custom properties in `:root` (`--gc-*`) — usable from inline styles,
-  which is the established pattern for the app shell.
+- As CSS custom properties in `:root` (`--gc-*`).
 - Mapped into Tailwind's `@theme inline` block, so every token is also a
   utility class (`bg-gc-canvas`, `text-gc-fg-muted`, `rounded-gc-md`, …).
+- **Re-declared under `.dark`** with a GitHub-dark palette. `next-themes`
+  toggles the `dark` class on `<html>` (`attribute="class"`), so a component
+  that only uses `--gc-*` utilities is automatically dark-mode correct.
 
 ```tsx
-// Inline style (app-shell components)
-<div style={{ backgroundColor: 'var(--gc-canvas)', borderColor: 'var(--gc-border)' }} />
+// Always this:
+<div className="border border-gc-border bg-gc-canvas text-gc-fg-muted" />
 
-// Tailwind utility (dialog / form components)
-<div className="bg-gc-canvas border border-gc-border" />
+// Never a hard-coded palette value:
+<div style={{ backgroundColor: '#f6f8fa' }} />
 ```
-
-> The app currently has two idioms: inline styles in the shell and
-> shadcn/Tailwind in the dialogs. Both now consume the same tokens, so they are
-> visually identical. Prefer the idiom already used by the file you are editing.
 
 > **Global resets must stay inside `@layer base`.** Anything unlayered in
 > `globals.css` outranks the `utilities` layer in the CSS cascade, so a plain
 > `* { padding: 0 }` would defeat every `px-*`/`py-*` utility (this is what made
-> the dialogs look cramped).
+> the dialogs look cramped). The file now only keeps an uncoloured `a { … }`
+> rule there; everything else comes from Tailwind Preflight.
 
 ---
 
@@ -59,6 +63,9 @@ All design tokens are defined once in `src/app/globals.css`:
 | `--gc-danger` | `#cf222e` | `text-gc-danger` | Errors, lock state, destructive text |
 | `--gc-danger-bg` | `#ffebe9` | `bg-gc-danger-bg` | Inline error background |
 | `--gc-danger-fg` | `#cf222e` | `text-gc-danger-fg` | Error text on error background |
+| `--gc-warning` | `#d4a72c` | `border-gc-warning` | "Not set up" badge border |
+| `--gc-warning-bg` | `#fff8c5` | `bg-gc-warning-bg` | "Not set up" badge background |
+| `--gc-warning-fg` | `#7d4e00` | `text-gc-warning-fg` | "Not set up" badge text |
 | `--gc-accent` | `#0969da` | `text-gc-accent` | Links, focus rings |
 | `--gc-brand` | `#667eea` | — | Logo gradient start |
 | `--gc-brand-alt` | `#764ba2` | — | Logo gradient end |
@@ -76,10 +83,15 @@ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 - Green (`--gc-success`) is reserved for the single primary confirmation action
   in a view and for the "unlocked" state. Never use it for a destructive action.
 - Red (`--gc-danger`) is for errors and locking only.
+- Amber (`--gc-warning*`) is only for the "not set up" repository state.
 - Do not hard-code hex values in new code; use the token. Legacy inline
   `#f6f8fa`, `#e1e4e8`, `#24292e`, `#666`, `#999`, `#2ea44f`, `#d73a49` map to
   the tokens above (`#666`/`#999` → `--gc-fg-muted`/`--gc-fg-subtle`,
   `#d73a49` → `--gc-danger`).
+- The dark palette is not a mechanical inversion: surfaces get *lighter* as
+  they come forward (`--gc-surface` `#0d1117` < `--gc-canvas` `#161b22` <
+  `--gc-canvas-subtle` `#21262d`), the opposite of the light theme. Keep that
+  ordering when adding a surface.
 
 ---
 
@@ -115,7 +127,7 @@ The app works on an 8px rhythm (Tailwind's default scale).
 
 | Block | Padding | Notes |
 | --- | --- | --- |
-| Sidebar / panel section | `1rem` | header, repo selector, account |
+| Sidebar / panel section | `1rem` | header, repo selector, account (+ `SidebarContent` scroll) |
 | Section header (label bar) | `0.75rem 1rem` | uppercase label + toolbar |
 | Dialog header | `px-6 pt-6` (24px) | leave `pr-12` for the close button |
 | Dialog body | `px-6 py-5` (24/20px) | field stack, `gap-4` |
@@ -127,9 +139,12 @@ The app works on an 8px rhythm (Tailwind's default scale).
 
 Fixed dimensions
 
-- Sidebar width: **300px**.
+- Sidebar width: **`16rem`** (256px), the shadcn `SIDEBAR_WIDTH`; icon rail
+  `3rem`. Both are CSS variables (`--sidebar-width`), not literals — don't
+  hard-code a width in `AppSidebar`.
 - Dialog width: **`26rem`** (`sm:max-w-[26rem]`); full-bleed below `sm`.
 - Field stack gap: **`gap-4`** (16px); label→input gap **`6px`**.
+- Shell height: `h-svh`.
 
 ---
 
@@ -156,6 +171,17 @@ Fixed dimensions
   - `--gc-shadow-card` (`0 4px 12px rgba(0,0,0,.08)`) → dropdowns/cards.
   - Buttons are **flat** (`shadow-none`).
 - The dialog overlay is `bg-black/80`, `z-50`.
+- **Centre a dialog with layout, never with a transform.** `DialogContent` is
+  centred by a `fixed inset-0 flex items-center justify-center p-4` wrapper in
+  `ui/dialog.tsx`; the dialog itself only fades.
+  Why: Tailwind v4 compiles `translate-x-[-50%]` to the standalone CSS
+  `translate:` property, while `@keyframes enter/exit` animate `transform`.
+  Those *compose* instead of replacing each other, so the canonical shadcn
+  `left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2` +
+  `slide-in-from-left-1/2 slide-in-from-top-[48%]` combination makes the dialog
+  fly in from the top-left before snapping to the centre. A flex wrapper cannot
+  have that failure mode. Scale/opacity animations (`zoom-in-95`) are fine —
+  they scale about the element's own centre.
 
 ---
 
@@ -202,7 +228,7 @@ anchored to the right edge.
 | --- | --- | --- | --- |
 | Locked / checking | `--gc-canvas` | `--gc-border-strong` | `--gc-fg-muted` |
 | Unlocked | `--gc-success-bg` | `--gc-success` | `--gc-success-fg` |
-| Not set up | `#fff8c5` | `#d4a72c` | `#7d4e00` |
+| Not set up | `bg-gc-warning-bg` | `--gc-warning` | `--gc-warning-fg` |
 
 ### 6.5 Inline alert (form error)
 
@@ -232,7 +258,7 @@ and blocks supplying their own padding:
     {/* Header: 36px medallion + title + description */}
     <DialogHeader className="flex-row items-start gap-3 space-y-0 px-6 pt-6 pr-12 text-left">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-gc-md border border-gc-border bg-gc-canvas text-gc-fg-muted">
-        <FiLock size={16} />
+        <Lock className="size-4" />
       </span>
       <div className="space-y-1.5">
         <DialogTitle className="text-base font-semibold leading-tight tracking-tight text-gc-fg">
@@ -270,9 +296,10 @@ and blocks supplying their own padding:
 Rules
 
 - The header medallion is **optional** but recommended for any dialog that has a
-  clear emblem (unlock → `FiLock`, decrypt → `FiAlertCircle`, set password →
-  `FiShield`, save password → `FiKey`). It is `36×36`, `rounded-gc-md`, on
-  `--gc-canvas` with a `--gc-border` hairline.
+  clear emblem (unlock → `Lock`, decrypt → `CircleAlert`, set password →
+  `ShieldCheck`, save password → `KeyRound`). It is `36×36`, `rounded-gc-md`,
+  on `--gc-canvas` with a `--gc-border` hairline. Icons are `lucide-react`,
+  sized with `className="size-4"` (16px) — never a numeric `size` prop.
 - Exactly **one** primary (green) action per dialog, placed last/right.
 - Cancel is always an outline button and always present for dismissible dialogs.
 - Errors render as an inline alert in the body — never `window.alert()`.
@@ -287,6 +314,32 @@ Rules
   `* { padding: 0 }` wins over the `utilities` layer and silently flattens every
   dialog.
 
+### 6.8 App shell & responsive layout
+
+The authenticated shell is a single `SidebarProvider`
+(`h-svh overflow-hidden`) wrapping `AppSidebar` + a `SidebarInset` that holds
+the editor. One component, two layouts:
+
+| Viewport | Sidebar | Reachable via |
+| --- | --- | --- |
+| `md` and up | Inline column, `collapsible="offcanvas"` | rail click, `⌘/Ctrl+B`, `SidebarTrigger` |
+| below `md` | `Sheet` overlay (Radix Dialog) | `SidebarTrigger` only |
+
+Rules
+
+- The shell is exactly viewport height: `h-svh` on the provider and
+  `overflow-hidden` on the inset, with the scroll living in the pane that owns
+  the content (file tree, editor textarea). Never let the page itself scroll.
+- `SidebarTrigger` lives in the **editor header**, so it is present on every
+  viewport — that is the only route to the file tree on mobile.
+- Give every header/footer row `flex-wrap` and hide secondary labels with
+  `hidden sm:inline` rather than shrinking them; the editor header must survive
+  a 320px viewport.
+- Panels are `min-w-0` whenever they sit in a flex row — without it a long file
+  path forces the whole shell wider than the viewport.
+- `SidebarProvider` persists its collapsed state in a cookie; do not add local
+  state for it.
+
 ---
 
 ## 7. States & interaction
@@ -294,6 +347,16 @@ Rules
 - **Hover:** backgrounds shift one surface step (`surface → canvas`); borders
   may darken to `--gc-border-strong`; links fade to `opacity: 0.7`.
 - **Focus:** `focus-visible:ring-1` using `--gc-accent`. Never remove the ring.
+  This is implemented once in `ui/input.tsx` (`focus-visible:border-gc-accent
+  focus-visible:ring-1 focus-visible:ring-gc-accent/60`) rather than per-field,
+  so a new input cannot forget it.
+- **Dismissal:** menus have **no exit animation**. Radix keeps a menu mounted
+  until `animationend`, and the still-registered `DismissableLayer` then eats an
+  outside pointerdown — including the trigger click that is trying to
+  *re-open* the menu. A second click inside the ~150ms exit window silently did
+  nothing. Removing the exit animation (in `ui/dropdown-menu.tsx`) closes the
+  window; dialogs and sheets keep theirs and are unaffected, because their
+  trigger is not also a toggle.
 - **Disabled:** `opacity: 0.5` and `cursor: not-allowed`; never hide the control.
 - **Loading:** keep the control in place and change its label (`Processing…`,
   `Saving…`); animate icons with the shared `spin` / `pulse` keyframes.
@@ -324,3 +387,6 @@ Rules
 | Flat buttons | Drop shadows on buttons |
 | `rounded-gc-md` controls, `rounded-gc-lg` dialogs | Mixed/arbitrary radii |
 | Global resets inside `@layer base` | Unlayered `* { padding: 0 }` overrides |
+| `bg-gc-*` tokens, dark-mode correct for free | Literal `#fff` / `bg-white` surfaces |
+| Layout-centered dialogs (flex wrapper) | Transform-centered dialogs (`translate-*` + `slide-in-*`) |
+| `lucide-react` icons via `className="size-4"` | `react-icons` / numeric `size={16}` |

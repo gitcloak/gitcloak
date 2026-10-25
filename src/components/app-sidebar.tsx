@@ -1,68 +1,89 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import { signOut } from 'next-auth/react'
+import {
+  AlertCircle,
+  Check,
+  ChevronsUpDown,
+  Lock,
+  LockOpen,
+  LogOut,
+  Plus,
+  RefreshCw,
+  Settings,
+  ShieldCheck,
+} from 'lucide-react'
+
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarRail,
+  SidebarSeparator,
+} from '@/components/ui/sidebar'
+import { cn } from '@/lib/utils'
+
 import { FileTree } from './file-tree'
-import { FiAlertCircle, FiLock, FiUnlock, FiPlus, FiShield, FiRefreshCw } from 'react-icons/fi'
+import { ThemeToggle } from './theme-toggle'
 
 /** Visual state of the selected repository's lock. */
 export type RepoStatus = 'checking' | 'uninitialized' | 'locked' | 'unlocked'
 
-const REPO_STATUS_META: Record<RepoStatus, { label: string; background: string; border: string; color: string; icon: ReactNode }> = {
+const REPO_STATUS_META: Record<
+  RepoStatus,
+  { label: string; icon: ReactNode; className: string }
+> = {
   checking: {
     label: 'Checking…',
-    background: '#f6f8fa',
-    border: '#d0d7de',
-    color: '#57606a',
-    icon: <FiRefreshCw size={12} />,
+    icon: <RefreshCw className="size-3 animate-spin" />,
+    className: 'border-gc-border bg-gc-canvas text-gc-fg-muted',
   },
   uninitialized: {
     label: 'Not set up',
-    background: '#fff8c5',
-    border: '#d4a72c',
-    color: '#7d4e00',
-    icon: <FiAlertCircle size={12} />,
+    icon: <AlertCircle className="size-3" />,
+    className: 'border-gc-warning/40 bg-gc-warning-bg text-gc-warning-fg',
   },
   locked: {
     label: 'Locked',
-    background: '#f6f8fa',
-    border: '#d0d7de',
-    color: '#57606a',
-    icon: <FiLock size={12} />,
+    icon: <Lock className="size-3" />,
+    className: 'border-gc-border bg-gc-canvas text-gc-fg-muted',
   },
   unlocked: {
     label: 'Unlocked',
-    background: '#dafbe1',
-    border: '#2ea44f',
-    color: '#1a7f37',
-    icon: <FiUnlock size={12} />,
+    icon: <LockOpen className="size-3" />,
+    className: 'border-gc-success/40 bg-gc-success-bg text-gc-success-fg',
   },
 }
 
 function RepoStatusBadge({ status }: { status: RepoStatus }) {
   const meta = REPO_STATUS_META[status]
   return (
-    <span
+    <Badge
       data-testid="repo-lock-status"
       data-repo-status={status}
       aria-live="polite"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '0.25rem',
-        padding: '0.125rem 0.5rem',
-        borderRadius: '999px',
-        fontSize: '0.6875rem',
-        fontWeight: 600,
-        background: meta.background,
-        border: `1px solid ${meta.border}`,
-        color: meta.color,
-        whiteSpace: 'nowrap',
-      }}
+      variant="outline"
+      className={cn('gap-1 px-2 py-0 text-[11px] font-semibold', meta.className)}
     >
       {meta.icon}
       {meta.label}
-    </span>
+    </Badge>
   )
 }
 
@@ -74,14 +95,6 @@ interface Repository {
   private: boolean
   description: string | null
   updatedAt: string
-}
-
-interface FileNode {
-  name: string
-  path: string
-  type: 'file' | 'dir'
-  sha: string
-  size?: number
 }
 
 interface AppSidebarProps {
@@ -98,12 +111,23 @@ interface AppSidebarProps {
   selectedFilePath?: string
 }
 
-export function AppSidebar({ repositories, userName, userImage, userEmail, onFileSelect, onNewFile, onRepoChange, onUnlockRepo, onLockRepo, repoStatus = 'checking', selectedFilePath }: AppSidebarProps) {
+export function AppSidebar({
+  repositories,
+  userName,
+  userImage,
+  userEmail,
+  onFileSelect,
+  onNewFile,
+  onRepoChange,
+  onUnlockRepo,
+  onLockRepo,
+  repoStatus = 'checking',
+  selectedFilePath,
+}: AppSidebarProps) {
   const isRepoUnlocked = repoStatus === 'unlocked'
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(
     repositories.length > 0 ? repositories[0] : null
   )
-  const [isRepoSelectorOpen, setIsRepoSelectorOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
 
@@ -113,14 +137,13 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
   }
 
   const handleRefresh = () => {
-    if ((window as any).__fileTreeRefresh) {
-      (window as any).__fileTreeRefresh()
-    }
+    window.__fileTreeRefresh?.()
   }
 
-  const handleLoadingChange = (isLoading: boolean) => {
+  // Stable identity: `FileTree` re-runs its load effect when this changes.
+  const handleLoadingChange = useCallback((isLoading: boolean) => {
     setIsRefreshing(isLoading)
-  }
+  }, [])
 
   const handleSignOut = async () => {
     if (isSigningOut) return
@@ -130,7 +153,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
     try {
       // Call API to revoke GitHub App authorization
       await fetch('/api/auth/signout', {
-        method: 'POST'
+        method: 'POST',
       })
     } catch (error) {
       console.error('Error revoking authorization:', error)
@@ -140,358 +163,201 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
     await signOut({ callbackUrl: '/', redirect: true })
   }
 
+  const initials = userName.slice(0, 2).toUpperCase()
+
   return (
-    <>
-      <style>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-      <div style={{
-        width: '300px',
-        backgroundColor: '#f6f8fa',
-        borderRight: '1px solid #e1e4e8',
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%'
-      }}>
-      {/* Header with logo */}
-      <div style={{
-        padding: '1rem',
-        borderBottom: '1px solid #e1e4e8',
-        backgroundColor: 'white'
-      }}>
-        <h1 style={{
-          fontSize: '1.25rem',
-          fontWeight: 'bold',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          margin: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem'
-        }}>
-          <FiShield style={{ color: '#667eea' }} />
-          GitCloak
-        </h1>
-      </div>
-
-      {/* Repository Selector */}
-      <div style={{
-        padding: '1rem',
-        borderBottom: '1px solid #e1e4e8',
-        backgroundColor: 'white'
-      }}>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '0.5rem'
-        }}>
-          <label style={{
-            fontSize: '0.75rem',
-            fontWeight: '600',
-            color: '#666',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px'
-          }}>
-            Repository
-          </label>
-          {selectedRepo && (
-            <RepoStatusBadge status={repoStatus} />
-          )}
+    <Sidebar collapsible="offcanvas">
+      <SidebarHeader>
+        <div className="flex items-center gap-2 px-2 py-1.5">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <ShieldCheck className="size-4" />
+          </span>
+          <span className="flex-1 truncate bg-gradient-to-br from-indigo-500 to-purple-600 bg-clip-text text-base font-bold text-transparent">
+            GitCloak
+          </span>
+          <ThemeToggle />
         </div>
-        <div style={{ position: 'relative' }}>
-          <button
-            data-testid="repo-selector"
-            data-repo={selectedRepo ? selectedRepo.fullName : ''}
-            data-repo-status={repoStatus}
-            onClick={() => setIsRepoSelectorOpen(!isRepoSelectorOpen)}
-            style={{
-              width: '100%',
-              padding: '0.5rem',
-              border: '1px solid #e1e4e8',
-              borderRadius: '6px',
-              backgroundColor: 'white',
-              cursor: 'pointer',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              fontSize: '0.875rem'
-            }}
-          >
-            <span style={{
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap'
-            }}>
-              {selectedRepo ? selectedRepo.fullName : 'Select repository'}
-            </span>
-            <span style={{ marginLeft: '0.5rem' }}>▼</span>
-          </button>
+      </SidebarHeader>
 
-          {isRepoSelectorOpen && (
-            <div style={{
-              position: 'absolute',
-              top: 'calc(100% + 4px)',
-              left: 0,
-              right: 0,
-              backgroundColor: 'white',
-              border: '1px solid #e1e4e8',
-              borderRadius: '6px',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-              maxHeight: '200px',
-              overflowY: 'auto',
-              zIndex: 10
-            }}>
+      <SidebarContent>
+        {/* Repository selector + lock control. */}
+        <SidebarGroup className="shrink-0">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <SidebarGroupLabel asChild>
+              <span className="h-auto px-0">Repository</span>
+            </SidebarGroupLabel>
+            {selectedRepo && <RepoStatusBadge status={repoStatus} />}
+          </div>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                data-testid="repo-selector"
+                data-repo={selectedRepo ? selectedRepo.fullName : ''}
+                data-repo-status={repoStatus}
+                variant="outline"
+                className="w-full justify-between font-normal"
+              >
+                <span className="truncate">
+                  {selectedRepo ? selectedRepo.fullName : 'Select repository'}
+                </span>
+                <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="w-(--radix-dropdown-menu-trigger-width) min-w-56"
+            >
+              <DropdownMenuLabel>Repositories</DropdownMenuLabel>
+              <DropdownMenuSeparator />
               {repositories.map((repo) => (
-                <button
+                <DropdownMenuItem
                   key={repo.id}
                   data-testid="repo-option"
                   data-repo={repo.fullName}
                   data-selected={selectedRepo?.id === repo.id}
-                  onClick={() => {
-                    handleRepoChange(repo)
-                    setIsRepoSelectorOpen(false)
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem',
-                    border: 'none',
-                    backgroundColor: selectedRepo?.id === repo.id ? '#f0f0f0' : 'white',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    fontSize: '0.875rem',
-                    borderBottom: '1px solid #f0f0f0'
-                  }}
+                  onSelect={() => handleRepoChange(repo)}
                 >
-                  {repo.fullName}
-                </button>
+                  <Check
+                    className={cn(
+                      'size-4 shrink-0',
+                      selectedRepo?.id === repo.id ? 'opacity-100' : 'opacity-0'
+                    )}
+                  />
+                  <span className="truncate">{repo.fullName}</span>
+                </DropdownMenuItem>
               ))}
-            </div>
-          )}
-        </div>
-        {selectedRepo && (
-          <button
-            data-testid="repo-lock-toggle"
-            data-repo-status={repoStatus}
-            onClick={isRepoUnlocked ? onLockRepo : onUnlockRepo}
-            disabled={repoStatus === 'checking'}
-            style={{
-              marginTop: '0.5rem',
-              width: '100%',
-              padding: '0.4rem 0.5rem',
-              fontSize: '0.75rem',
-              border: '1px solid #e1e4e8',
-              borderRadius: '6px',
-              backgroundColor: isRepoUnlocked ? '#fff5f5' : 'white',
-              cursor: repoStatus === 'checking' ? 'wait' : 'pointer',
-              color: isRepoUnlocked ? '#d73a49' : '#24292e',
-              fontWeight: '500',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.375rem',
-              height: '30px',
-              opacity: repoStatus === 'checking' ? 0.6 : 1
-            }}
-            title={isRepoUnlocked ? 'Lock repository (clear password from memory)' : 'Unlock repository (enter password)'}
-          >
-            {isRepoUnlocked ? <FiUnlock size={14} /> : <FiLock size={14} />}
-            {isRepoUnlocked ? 'Lock repository' : 'Unlock repository'}
-          </button>
-        )}
-      </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-      {/* File Navigator */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        backgroundColor: 'white',
-        display: 'flex',
-        flexDirection: 'column'
-      }}>
-        <div style={{
-          padding: '0.75rem 1rem',
-          fontSize: '0.75rem',
-          fontWeight: '600',
-          color: '#666',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          borderBottom: '1px solid #e1e4e8',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <span>Files</span>
           {selectedRepo && (
-            <div style={{ display: 'flex', gap: '0.25rem' }}>
-              <button
-                data-testid="refresh-files-button"
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                style={{
-                  padding: '0.375rem 0.5rem',
-                  fontSize: '0.75rem',
-                  border: '1px solid #e1e4e8',
-                  borderRadius: '4px',
-                  backgroundColor: 'white',
-                  cursor: isRefreshing ? 'not-allowed' : 'pointer',
-                  color: '#24292e',
-                  fontWeight: '500',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem',
-                  height: '28px',
-                  opacity: isRefreshing ? 0.6 : 1
-                }}
-                title="Refresh file list"
-              >
-                <FiRefreshCw
-                  size={14}
-                  style={{
-                    animation: isRefreshing ? 'spin 1s linear infinite' : 'none'
-                  }}
-                />
-              </button>
-              <button
-                data-testid="new-file-button"
-                onClick={onNewFile}
-                style={{
-                  padding: '0.375rem 0.5rem',
-                  fontSize: '0.75rem',
-                  border: '1px solid #e1e4e8',
-                  borderRadius: '4px',
-                  backgroundColor: 'white',
-                  cursor: 'pointer',
-                  color: '#24292e',
-                  fontWeight: '500',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem',
-                  height: '28px'
-                }}
-                title="Create new file"
-              >
-                <FiPlus size={14} />
-                New
-              </button>
-            </div>
+            <Button
+              data-testid="repo-lock-toggle"
+              data-repo-status={repoStatus}
+              onClick={isRepoUnlocked ? onLockRepo : onUnlockRepo}
+              disabled={repoStatus === 'checking'}
+              variant="outline"
+              size="sm"
+              className="mt-2 w-full"
+              title={
+                isRepoUnlocked
+                  ? 'Lock repository (clear password from memory)'
+                  : 'Unlock repository (enter password)'
+              }
+            >
+              {isRepoUnlocked ? (
+                <LockOpen className="size-4" />
+              ) : (
+                <Lock className="size-4" />
+              )}
+              {isRepoUnlocked ? 'Lock repository' : 'Unlock repository'}
+            </Button>
           )}
-        </div>
+        </SidebarGroup>
 
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {selectedRepo ? (
-            <FileTree
-              owner={selectedRepo.owner}
-              repo={selectedRepo.name}
-              onFileSelect={(path, sha) => {
-                onFileSelect?.(selectedRepo.owner, selectedRepo.name, path, sha)
-              }}
-              selectedFilePath={selectedFilePath}
-              onLoadingChange={handleLoadingChange}
-            />
-          ) : (
-            <div style={{
-              padding: '1rem',
-              color: '#999',
-              fontSize: '0.875rem',
-              fontStyle: 'italic',
-              textAlign: 'center'
-            }}>
-              Select a repository to view files
-            </div>
-          )}
-        </div>
-      </div>
+        <SidebarSeparator />
 
-      {/* Account/Settings at bottom */}
-      <div style={{
-        borderTop: '1px solid #e1e4e8',
-        padding: '1rem',
-        backgroundColor: 'white'
-      }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.75rem',
-          marginBottom: '0.75rem'
-        }}>
-          {userImage && (
-            <img
-              src={userImage}
-              alt={userName}
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%'
-              }}
-            />
-          )}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div data-testid="user-name" style={{
-              fontSize: '0.875rem',
-              fontWeight: '500',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap'
-            }}>
+        {/* File navigator. */}
+        <SidebarGroup className="flex min-h-0 flex-1 flex-col">
+          <SidebarGroupLabel className="justify-between gap-1 pr-1">
+            <span>Files</span>
+            {selectedRepo && (
+              <span className="flex items-center gap-1">
+                <Button
+                  data-testid="refresh-files-button"
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  variant="ghost"
+                  size="icon-xs"
+                  title="Refresh file list"
+                >
+                  <RefreshCw
+                    className={cn('size-3.5', isRefreshing && 'animate-spin')}
+                  />
+                </Button>
+                <Button
+                  data-testid="new-file-button"
+                  onClick={onNewFile}
+                  variant="ghost"
+                  size="xs"
+                  title="Create new file"
+                >
+                  <Plus className="size-3.5" />
+                  New
+                </Button>
+              </span>
+            )}
+          </SidebarGroupLabel>
+
+          <SidebarGroupContent className="min-h-0 flex-1 overflow-y-auto">
+            {selectedRepo ? (
+              <FileTree
+                owner={selectedRepo.owner}
+                repo={selectedRepo.name}
+                onFileSelect={(path, sha) => {
+                  onFileSelect?.(selectedRepo.owner, selectedRepo.name, path, sha)
+                }}
+                selectedFilePath={selectedFilePath}
+                onLoadingChange={handleLoadingChange}
+              />
+            ) : (
+              <p className="px-2 py-4 text-center text-sm text-gc-fg-subtle italic">
+                Select a repository to view files
+              </p>
+            )}
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <SidebarFooter className="border-t border-sidebar-border">
+        <div className="flex items-center gap-2 px-1">
+          <Avatar className="size-8">
+            {userImage && <AvatarImage src={userImage} alt={userName} />}
+            <AvatarFallback>{initials}</AvatarFallback>
+          </Avatar>
+          <div className="grid min-w-0 flex-1 leading-tight">
+            <span
+              data-testid="user-name"
+              className="truncate text-sm font-medium"
+            >
               {userName}
-            </div>
+            </span>
             {userEmail && (
-              <div data-testid="user-email" style={{
-                fontSize: '0.75rem',
-                color: '#666',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
-              }}>
+              <span
+                data-testid="user-email"
+                className="truncate text-xs text-sidebar-foreground/70"
+              >
                 {userEmail}
-              </div>
+              </span>
             )}
           </div>
         </div>
 
-        <div style={{
-          display: 'flex',
-          gap: '0.5rem'
-        }}>
-          <button
+        <div className="flex gap-2">
+          <Button
             data-testid="settings-button"
-            style={{
-              flex: 1,
-              padding: '0.5rem',
-              fontSize: '0.75rem',
-              border: '1px solid #e1e4e8',
-              borderRadius: '6px',
-              backgroundColor: 'white',
-              cursor: 'pointer'
-            }}
+            variant="outline"
+            size="sm"
+            className="flex-1"
           >
+            <Settings className="size-3.5" />
             Settings
-          </button>
-          <button
+          </Button>
+          <Button
             data-testid="signout-button"
             onClick={handleSignOut}
             disabled={isSigningOut}
-            style={{
-              flex: 1,
-              padding: '0.5rem',
-              fontSize: '0.75rem',
-              border: '1px solid #e1e4e8',
-              borderRadius: '6px',
-              backgroundColor: 'white',
-              cursor: isSigningOut ? 'not-allowed' : 'pointer',
-              opacity: isSigningOut ? 0.6 : 1
-            }}
+            variant="outline"
+            size="sm"
+            className="flex-1"
           >
-            {isSigningOut ? 'Signing out...' : 'Sign Out'}
-          </button>
+            <LogOut className="size-3.5" />
+            {isSigningOut ? 'Signing out…' : 'Sign Out'}
+          </Button>
         </div>
-      </div>
-    </div>
-    </>
+      </SidebarFooter>
+
+      <SidebarRail />
+    </Sidebar>
   )
 }

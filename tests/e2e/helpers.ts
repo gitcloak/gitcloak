@@ -29,7 +29,7 @@ export async function gotoApp(page: Page): Promise<void> {
   await page.getByTestId('repo-selector').waitFor({ state: 'visible' })
   // FileTree exposes this global once it mounts; use it as a hydration gate.
   await page.waitForFunction(
-    () => typeof (window as any).__fileTreeRefresh === 'function'
+    () => typeof window.__fileTreeRefresh === 'function'
   )
   await expect(page.getByTestId('repo-lock-status')).not.toHaveAttribute(
     'data-repo-status',

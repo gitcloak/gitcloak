@@ -29,7 +29,7 @@ export async function verifyPassword(gitcloakContent: string, password: string):
     const gitcloak = JSON.parse(gitcloakContent)
     const decrypted = await decryptWithPassword(gitcloak.verification, password)
     return decrypted === VERIFICATION_STRING
-  } catch (error) {
+  } catch {
     // If decryption fails, password is incorrect
     return false
   }
@@ -60,7 +60,7 @@ export async function checkGitCloakExists(owner: string, repo: string): Promise<
     }
 
     return { exists: false }
-  } catch (error) {
+  } catch {
     return { exists: false }
   }
 }

@@ -83,14 +83,18 @@ export class BackendConflictError extends Error {
  * bundle from the route, which makes `instanceof` unreliable across that
  * boundary, so match on `name` as well as the prototype.
  */
-export function isBackendNotFound(error: unknown): boolean {
+export function isBackendNotFound(
+  error: unknown
+): error is BackendNotFoundError {
   return (
     error instanceof BackendNotFoundError ||
     (error as { name?: string })?.name === 'BackendNotFoundError'
   )
 }
 
-export function isBackendConflict(error: unknown): boolean {
+export function isBackendConflict(
+  error: unknown
+): error is BackendConflictError {
   return (
     error instanceof BackendConflictError ||
     (error as { name?: string })?.name === 'BackendConflictError'
