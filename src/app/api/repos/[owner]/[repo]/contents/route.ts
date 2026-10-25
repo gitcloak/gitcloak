@@ -1,12 +1,13 @@
-import { auth } from "@/auth"
 import { NextResponse } from "next/server"
+import { getSession } from "@/lib/session"
+import { createFileBackend, isBackendNotFound } from "@/lib/backends"
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ owner: string; repo: string }> }
 ) {
   try {
-    const session = await auth()
+    const session = await getSession()
 
     if (!session?.accessToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -16,19 +17,30 @@ export async function GET(
     const { searchParams } = new URL(request.url)
     const path = searchParams.get('path') || ''
 
-    const { Octokit } = await import("@octokit/rest")
-    const octokit = new Octokit({ auth: session.accessToken })
+    const backend = createFileBackend(session.accessToken)
+    const result = await backend.getContents(owner, repo, path)
 
-    // Fetch contents at the specified path
-    const { data } = await octokit.repos.getContent({
-      owner,
-      repo,
-      path: path,
+    // Keep the GitHub-compatible response shape the browser code expects:
+    // directories are a JSON array and files carry base64 `content`.
+    if (result.type === 'dir') {
+      return NextResponse.json(result.entries)
+    }
+
+    const file = result.file
+    return NextResponse.json({
+      name: file.name,
+      path: file.path,
+      sha: file.sha,
+      size: file.size,
+      type: 'file',
+      content: Buffer.from(file.content, 'utf-8').toString('base64'),
+      encoding: 'base64',
     })
-
-    // Return the contents
-    return NextResponse.json(data)
   } catch (error) {
+    if (isBackendNotFound(error)) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+
     console.error('Error fetching repository contents:', error)
     return NextResponse.json(
       { error: 'Failed to fetch repository contents' },

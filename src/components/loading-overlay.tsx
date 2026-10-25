@@ -6,8 +6,12 @@ interface LoadingOverlayProps {
 
 export function LoadingOverlay({ message = 'Processing...' }: LoadingOverlayProps) {
   return (
-    <div style={{
-      position: 'fixed',
+    <div
+      data-testid="loading-overlay"
+      role="status"
+      aria-busy="true"
+      style={{
+        position: 'fixed',
       top: 0,
       left: 0,
       right: 0,

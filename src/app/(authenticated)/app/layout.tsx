@@ -1,4 +1,4 @@
-import { auth } from "@/auth"
+import { getSession } from "@/lib/session"
 import { redirect } from "next/navigation"
 
 export default async function AppLayout({
@@ -6,7 +6,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode
 }) {
-  const session = await auth()
+  const session = await getSession()
 
   // Protect all routes under /app
   if (!session?.user || !session.accessToken) {

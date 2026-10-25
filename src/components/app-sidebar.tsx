@@ -1,9 +1,70 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { signOut } from 'next-auth/react'
 import { FileTree } from './file-tree'
-import { FiLock, FiUnlock, FiPlus, FiShield, FiRefreshCw } from 'react-icons/fi'
+import { FiAlertCircle, FiLock, FiUnlock, FiPlus, FiShield, FiRefreshCw } from 'react-icons/fi'
+
+/** Visual state of the selected repository's lock. */
+export type RepoStatus = 'checking' | 'uninitialized' | 'locked' | 'unlocked'
+
+const REPO_STATUS_META: Record<RepoStatus, { label: string; background: string; border: string; color: string; icon: ReactNode }> = {
+  checking: {
+    label: 'Checking…',
+    background: '#f6f8fa',
+    border: '#d0d7de',
+    color: '#57606a',
+    icon: <FiRefreshCw size={12} />,
+  },
+  uninitialized: {
+    label: 'Not set up',
+    background: '#fff8c5',
+    border: '#d4a72c',
+    color: '#7d4e00',
+    icon: <FiAlertCircle size={12} />,
+  },
+  locked: {
+    label: 'Locked',
+    background: '#f6f8fa',
+    border: '#d0d7de',
+    color: '#57606a',
+    icon: <FiLock size={12} />,
+  },
+  unlocked: {
+    label: 'Unlocked',
+    background: '#dafbe1',
+    border: '#2ea44f',
+    color: '#1a7f37',
+    icon: <FiUnlock size={12} />,
+  },
+}
+
+function RepoStatusBadge({ status }: { status: RepoStatus }) {
+  const meta = REPO_STATUS_META[status]
+  return (
+    <span
+      data-testid="repo-lock-status"
+      data-repo-status={status}
+      aria-live="polite"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.25rem',
+        padding: '0.125rem 0.5rem',
+        borderRadius: '999px',
+        fontSize: '0.6875rem',
+        fontWeight: 600,
+        background: meta.background,
+        border: `1px solid ${meta.border}`,
+        color: meta.color,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {meta.icon}
+      {meta.label}
+    </span>
+  )
+}
 
 interface Repository {
   id: number
@@ -33,11 +94,12 @@ interface AppSidebarProps {
   onRepoChange?: (repo: Repository | null) => void
   onUnlockRepo?: () => void
   onLockRepo?: () => void
-  isRepoUnlocked?: boolean
+  repoStatus?: RepoStatus
   selectedFilePath?: string
 }
 
-export function AppSidebar({ repositories, userName, userImage, userEmail, onFileSelect, onNewFile, onRepoChange, onUnlockRepo, onLockRepo, isRepoUnlocked, selectedFilePath }: AppSidebarProps) {
+export function AppSidebar({ repositories, userName, userImage, userEmail, onFileSelect, onNewFile, onRepoChange, onUnlockRepo, onLockRepo, repoStatus = 'checking', selectedFilePath }: AppSidebarProps) {
+  const isRepoUnlocked = repoStatus === 'unlocked'
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(
     repositories.length > 0 ? repositories[0] : null
   )
@@ -138,31 +200,14 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
             Repository
           </label>
           {selectedRepo && (
-            <button
-              onClick={isRepoUnlocked ? onLockRepo : onUnlockRepo}
-              style={{
-                padding: '0.375rem 0.5rem',
-                fontSize: '0.75rem',
-                border: '1px solid #e1e4e8',
-                borderRadius: '4px',
-                backgroundColor: isRepoUnlocked ? '#fff5f5' : 'white',
-                cursor: 'pointer',
-                color: isRepoUnlocked ? '#d73a49' : '#24292e',
-                fontWeight: '500',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-                height: '28px'
-              }}
-              title={isRepoUnlocked ? 'Lock repository (clear password from memory)' : 'Unlock repository (enter password)'}
-            >
-              {isRepoUnlocked ? <FiUnlock size={14} /> : <FiLock size={14} />}
-              {isRepoUnlocked ? 'Lock' : 'Unlock'}
-            </button>
+            <RepoStatusBadge status={repoStatus} />
           )}
         </div>
         <div style={{ position: 'relative' }}>
           <button
+            data-testid="repo-selector"
+            data-repo={selectedRepo ? selectedRepo.fullName : ''}
+            data-repo-status={repoStatus}
             onClick={() => setIsRepoSelectorOpen(!isRepoSelectorOpen)}
             style={{
               width: '100%',
@@ -204,6 +249,9 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
               {repositories.map((repo) => (
                 <button
                   key={repo.id}
+                  data-testid="repo-option"
+                  data-repo={repo.fullName}
+                  data-selected={selectedRepo?.id === repo.id}
                   onClick={() => {
                     handleRepoChange(repo)
                     setIsRepoSelectorOpen(false)
@@ -225,6 +273,36 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
             </div>
           )}
         </div>
+        {selectedRepo && (
+          <button
+            data-testid="repo-lock-toggle"
+            data-repo-status={repoStatus}
+            onClick={isRepoUnlocked ? onLockRepo : onUnlockRepo}
+            disabled={repoStatus === 'checking'}
+            style={{
+              marginTop: '0.5rem',
+              width: '100%',
+              padding: '0.4rem 0.5rem',
+              fontSize: '0.75rem',
+              border: '1px solid #e1e4e8',
+              borderRadius: '6px',
+              backgroundColor: isRepoUnlocked ? '#fff5f5' : 'white',
+              cursor: repoStatus === 'checking' ? 'wait' : 'pointer',
+              color: isRepoUnlocked ? '#d73a49' : '#24292e',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.375rem',
+              height: '30px',
+              opacity: repoStatus === 'checking' ? 0.6 : 1
+            }}
+            title={isRepoUnlocked ? 'Lock repository (clear password from memory)' : 'Unlock repository (enter password)'}
+          >
+            {isRepoUnlocked ? <FiUnlock size={14} /> : <FiLock size={14} />}
+            {isRepoUnlocked ? 'Lock repository' : 'Unlock repository'}
+          </button>
+        )}
       </div>
 
       {/* File Navigator */}
@@ -251,6 +329,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
           {selectedRepo && (
             <div style={{ display: 'flex', gap: '0.25rem' }}>
               <button
+                data-testid="refresh-files-button"
                 onClick={handleRefresh}
                 disabled={isRefreshing}
                 style={{
@@ -278,6 +357,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
                 />
               </button>
               <button
+                data-testid="new-file-button"
                 onClick={onNewFile}
                 style={{
                   padding: '0.375rem 0.5rem',
@@ -351,7 +431,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
             />
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
+            <div data-testid="user-name" style={{
               fontSize: '0.875rem',
               fontWeight: '500',
               overflow: 'hidden',
@@ -361,7 +441,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
               {userName}
             </div>
             {userEmail && (
-              <div style={{
+              <div data-testid="user-email" style={{
                 fontSize: '0.75rem',
                 color: '#666',
                 overflow: 'hidden',
@@ -379,6 +459,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
           gap: '0.5rem'
         }}>
           <button
+            data-testid="settings-button"
             style={{
               flex: 1,
               padding: '0.5rem',
@@ -392,6 +473,7 @@ export function AppSidebar({ repositories, userName, userImage, userEmail, onFil
             Settings
           </button>
           <button
+            data-testid="signout-button"
             onClick={handleSignOut}
             disabled={isSigningOut}
             style={{

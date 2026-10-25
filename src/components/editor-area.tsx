@@ -80,14 +80,14 @@ export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps)
         alignItems: 'center'
       }}>
         <div>
-          <div style={{
+          <div data-testid="editor-repo" style={{
             fontSize: '0.875rem',
             color: '#666',
             marginBottom: '0.25rem'
           }}>
             {selectedFile ? `${selectedFile.owner}/${selectedFile.repo}` : 'No file selected'}
           </div>
-          <div style={{
+          <div data-testid="editor-title" style={{
             fontSize: '1.25rem',
             fontWeight: '600',
             color: '#24292e',
@@ -97,7 +97,7 @@ export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps)
           }}>
             {selectedFile ? (
               <>
-                <span>{selectedFile.path}</span>
+                <span data-testid="selected-file-path">{selectedFile.path}</span>
                 {selectedFile.isNew && (
                   <span style={{
                     fontSize: '0.75rem',
@@ -121,6 +121,8 @@ export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps)
           gap: '0.5rem'
         }}>
           <button
+            data-testid="save-button"
+            data-state={!selectedFile ? 'empty' : hasChanges ? 'dirty' : 'clean'}
             onClick={handleSave}
             disabled={!selectedFile || !hasChanges || isSaving}
             style={{
@@ -190,6 +192,7 @@ export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps)
               </div>
             ) : selectedFile ? (
               <textarea
+                data-testid="editor-input"
                 value={content}
                 onChange={(e) => handleContentChange(e.target.value)}
                 spellCheck={false}
@@ -207,7 +210,7 @@ export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps)
                 }}
               />
             ) : (
-              <div style={{
+              <div data-testid="editor-empty" style={{
                 flex: 1,
                 display: 'flex',
                 alignItems: 'center',
@@ -240,7 +243,7 @@ export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps)
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
-        <div>
+        <div data-testid="editor-status" data-status={isSaving ? 'saving' : hasChanges ? 'modified' : selectedFile ? 'saved' : 'ready'}>
           {isSaving ? '● Saving...' : hasChanges ? '● Modified' : selectedFile ? '● Saved' : 'Ready'}
         </div>
         <div style={{
@@ -248,7 +251,7 @@ export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps)
           gap: '1rem',
           alignItems: 'center'
         }}>
-          <div>
+          <div data-testid="editor-stats">
             {selectedFile ? `${content.split('\n').length} lines | ${content.length} chars` : 'UTF-8'}
           </div>
           <a

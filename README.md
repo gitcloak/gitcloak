@@ -173,11 +173,18 @@ gitcloak/
 │   │   ├── file-tree.tsx      # Repository file browser
 │   │   └── ...
 │   ├── lib/                   # Utility libraries
+│   │   ├── backends/          # Storage backends (git / mock)
 │   │   ├── encryption.ts      # Age encryption/decryption
 │   │   ├── gitcloak.ts        # Password verification
+│   │   ├── session.ts         # Session resolution (mock-aware)
 │   │   └── github-app.ts      # GitHub API client
 │   └── auth.ts                # NextAuth configuration
 ├── public/                    # Static assets
+├── docs/                      # Documentation
+│   └── style-guide.md         # UI style guide (tokens & components)
+├── tests/
+│   ├── unit/                  # Vitest unit tests (crypto helpers)
+│   └── e2e/                   # Playwright end-to-end tests
 ├── .env.local                 # Environment variables (not in git)
 ├── package.json
 ├── tsconfig.json
@@ -214,6 +221,69 @@ age -d -o decrypted.md secrets.md.age
 # Enter your repository password when prompted
 \`\`\`
 
+## Storage Backends
+
+All repository access on the server goes through a small backend interface (`src/lib/backends`):
+
+- **`git`** (default) – talks to GitHub with the signed-in user's OAuth token.
+- **`mock`** – an in-memory backend seeded with real age-encrypted content, used by the end-to-end test suite.
+
+Select the backend with the `FILE_BACKEND` environment variable (`git` or `mock`).
+`git` is the default everywhere; `mock` is reserved for the automated test suite
+and is never selected automatically.
+
+When `FILE_BACKEND=mock`, authentication is bypassed with a deterministic mock
+session, so the app can be driven locally without GitHub credentials. The mock
+backend also exposes test-only endpoints (`POST /api/test/reset` and
+`GET /api/test/state`) which return `404` whenever the mock backend is not
+active.
+
+### Vercel preview deployments
+
+Like every environment other than the automated test suite, preview deployments
+use the real GitHub backend. A preview therefore needs the GitHub/Auth variables
+(`AUTH_SECRET`, `GITHUB_*`, `AUTH_URL`, `NEXT_PUBLIC_GITHUB_APP_NAME`) set in the
+**Preview** scope, and its OAuth callback URL registered on the GitHub App.
+Because each deploy gets a unique hostname, register the stable **branch alias**
+(e.g. `https://gitcloak-git-<branch>-<team>.vercel.app/api/auth/callback/github`)
+and set `AUTH_URL` to that same alias — per-commit URLs will not match the OAuth
+callback. Without those variables Auth.js shows the *"There is a problem with
+the server configuration"* error on `/api/auth/error`.
+
+## End-to-End Tests
+
+The frontend is covered by Playwright tests that run the real Next.js app
+against the mock backend:
+
+```bash
+# Uses the locally installed Google Chrome (`channel: "chrome"`).
+# On a machine without Chrome run `npx playwright install chromium` and
+# remove `channel` from playwright.config.ts.
+npm run test:e2e
+```
+
+The suite boots `next dev` on port 3100 with `FILE_BACKEND=mock` (see
+`playwright.config.ts`), resets the backend before every test and verifies the
+landing page, repository selector, lock/unlock flow, file tree, editor,
+decryption with an alternative password, creating/saving encrypted files, a
+full encrypt-on-save → reload → decrypt round trip (asserting the plaintext is
+never stored), and that the [style guide](docs/style-guide.md) is applied to
+the unlock popup.
+
+## Unit Tests
+
+The pure library code is covered by [Vitest](https://vitest.dev) unit tests:
+
+```bash
+npm run test:unit        # single run
+npm run test:unit:watch  # watch mode
+```
+
+These target `src/lib/encryption.ts` (age encrypt/decrypt round trips, armored
+output, fresh-salt non-determinism, wrong-password and tamper rejection,
+unicode/empty content) and `src/lib/gitcloak.ts` (`.gitcloak` verification file
+creation and password verification). Run everything with `npm test`.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -221,6 +291,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ### Development Guidelines
 
 - Use TypeScript for type safety
+- Follow the [style guide](docs/style-guide.md) for all UI changes
 - Follow the existing code style
 - Test your changes locally before submitting
 - Update documentation as needed

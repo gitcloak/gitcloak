@@ -42,3 +42,11 @@ next-env.d.ts
 
 # Claude
 .claude
+
+# E2E test build directory
+/.next-e2e/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
