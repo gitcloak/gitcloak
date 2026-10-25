@@ -41,14 +41,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.refreshToken = account.refresh_token
         token.expiresAt = account.expires_at
 
-        // Log for debugging
-        console.log('Auth callback - account:', {
-          provider: account.provider,
-          type: account.type,
-          hasAccessToken: !!account.access_token,
-          tokenPreview: account.access_token?.substring(0, 20) + '...',
-          scope: account.scope,
-        })
       }
       if (profile) {
         token.login = githubLogin(profile)
@@ -60,14 +52,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       session.accessToken = token.accessToken as string
       session.user.login = token.login as string
 
-      // Log for debugging
-      console.log('Session callback:', {
-        hasAccessToken: !!session.accessToken,
-        tokenPreview: session.accessToken?.substring(0, 20) + '...',
-      })
-
       return session
     },
   },
-  debug: true, // Enable debug mode to see auth flow issues
+  // Auth.js debug output is verbose and can include token material; keep it
+  // to local development so it never reaches production or preview logs.
+  debug: process.env.NODE_ENV === "development",
 })
