@@ -1,5 +1,7 @@
 'use client'
 
+import { Loader2 } from 'lucide-react'
+
 interface LoadingOverlayProps {
   message?: string
 }
@@ -10,49 +12,11 @@ export function LoadingOverlay({ message = 'Processing...' }: LoadingOverlayProp
       data-testid="loading-overlay"
       role="status"
       aria-busy="true"
-      style={{
-        position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.7)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 9999,
-    }}>
-      <div style={{
-        backgroundColor: 'white',
-        borderRadius: '12px',
-        padding: '2rem 3rem',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '1rem',
-      }}>
-        <div style={{
-          width: '48px',
-          height: '48px',
-          border: '4px solid #e1e4e8',
-          borderTop: '4px solid #2ea44f',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite',
-        }} />
-        <div style={{
-          fontSize: '1rem',
-          fontWeight: '500',
-          color: '#24292e',
-        }}>
-          {message}
-        </div>
-        <style>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}</style>
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in"
+    >
+      <div className="flex flex-col items-center gap-4 rounded-xl bg-background px-12 py-8 text-foreground shadow-lg">
+        <Loader2 className="size-10 animate-spin text-gc-success" />
+        <p className="text-sm font-medium">{message}</p>
       </div>
     </div>
   )

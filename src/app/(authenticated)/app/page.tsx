@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation"
+import { TriangleAlert } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { getSession } from "@/lib/session"
 import { createFileBackend, type RepositorySummary } from "@/lib/backends"
 import { ClientPage } from "./client-page"
@@ -35,39 +37,14 @@ export default async function AppPage() {
   // Show error if any
   if (error) {
     return (
-      <div style={{
-        width: '100%',
-        height: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#f6f8fa'
-      }}>
-        <div style={{
-          maxWidth: '500px',
-          padding: '3rem 2rem',
-          textAlign: 'center',
-          backgroundColor: 'white',
-          borderRadius: '12px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-        }}>
-          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
-          <h2 style={{ marginBottom: '1rem', color: '#333' }}>Error Loading Data</h2>
-          <p style={{ color: '#666', marginBottom: '2rem' }}>{error}</p>
-          <a
-            href="/app"
-            style={{
-              display: 'inline-block',
-              padding: '0.75rem 1.5rem',
-              backgroundColor: '#24292e',
-              color: 'white',
-              borderRadius: '6px',
-              textDecoration: 'none',
-              fontWeight: '500'
-            }}
-          >
-            Retry
-          </a>
+      <div className="flex min-h-svh w-full items-center justify-center bg-muted p-6">
+        <div className="w-full max-w-md rounded-xl border bg-card p-8 text-center shadow-sm">
+          <TriangleAlert className="mx-auto mb-4 size-10 text-gc-warning-fg" />
+          <h2 className="mb-2 text-lg font-semibold">Error Loading Data</h2>
+          <p className="mb-6 text-sm text-muted-foreground">{error}</p>
+          <Button asChild>
+            <a href="/app">Retry</a>
+          </Button>
         </div>
       </div>
     )

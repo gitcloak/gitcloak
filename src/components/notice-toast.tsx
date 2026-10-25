@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect } from 'react'
-import { FiAlertCircle, FiCheckCircle, FiInfo, FiX } from 'react-icons/fi'
+import { CircleAlert, CircleCheck, Info, X } from 'lucide-react'
+
+import { cn } from '@/lib/utils'
 
 export interface Notice {
   id: string
@@ -18,25 +20,19 @@ interface NoticeToastProps {
 
 const NOTICE_STYLES: Record<
   Notice['type'],
-  { background: string; border: string; color: string; icon: React.ReactNode }
+  { className: string; icon: React.ReactNode }
 > = {
   success: {
-    background: '#dafbe1',
-    border: '#2ea44f',
-    color: '#1a7f37',
-    icon: <FiCheckCircle size={18} />,
+    className: 'border-gc-success/40 bg-gc-success-bg text-gc-success-fg',
+    icon: <CircleCheck className="size-[18px]" />,
   },
   error: {
-    background: '#ffebe9',
-    border: '#cf222e',
-    color: '#cf222e',
-    icon: <FiAlertCircle size={18} />,
+    className: 'border-gc-danger/40 bg-gc-danger-bg text-gc-danger-fg',
+    icon: <CircleAlert className="size-[18px]" />,
   },
   info: {
-    background: '#ddf4ff',
-    border: '#0969da',
-    color: '#0969da',
-    icon: <FiInfo size={18} />,
+    className: 'border-gc-accent/40 bg-gc-accent/10 text-gc-accent',
+    icon: <Info className="size-[18px]" />,
   },
 }
 
@@ -44,8 +40,16 @@ const NOTICE_STYLES: Record<
  * Small, non-blocking, HTML rendered notification used instead of native
  * browser alert() dialogs. Announced politely to assistive technology and
  * auto-dismissed after `duration` ms.
+ *
+ * Deliberately not `sonner`: the flow is driven by tests through a stable
+ * `data-testid="notice"` + `data-notice-type` contract, which sonner's portal
+ * does not expose. It is styled with the same tokens as the rest of the shell.
  */
-export function NoticeToast({ notice, onDismiss, duration = 5000 }: NoticeToastProps) {
+export function NoticeToast({
+  notice,
+  onDismiss,
+  duration = 5000,
+}: NoticeToastProps) {
   useEffect(() => {
     if (!notice) return
     const timer = setTimeout(onDismiss, duration)
@@ -57,49 +61,29 @@ export function NoticeToast({ notice, onDismiss, duration = 5000 }: NoticeToastP
   const styles = NOTICE_STYLES[notice.type]
 
   return (
-    <div
-      data-testid="notice"
-      data-notice-type={notice.type}
-      role="status"
-      aria-live="polite"
-      style={{
-        position: 'fixed',
-        top: '1rem',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 100,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.625rem',
-        maxWidth: 'min(560px, calc(100vw - 2rem))',
-        padding: '0.75rem 1rem',
-        borderRadius: '8px',
-        background: styles.background,
-        border: `1px solid ${styles.border}`,
-        color: styles.color,
-        fontSize: '0.875rem',
-        fontWeight: 500,
-        boxShadow: '0 6px 20px rgba(0, 0, 0, 0.12)',
-      }}
-    >
-      <span style={{ display: 'flex', flexShrink: 0 }}>{styles.icon}</span>
-      <span style={{ flex: 1 }}>{notice.message}</span>
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="Dismiss notification"
-        style={{
-          border: 'none',
-          background: 'transparent',
-          color: 'inherit',
-          cursor: 'pointer',
-          display: 'flex',
-          padding: 0,
-          opacity: 0.7,
-        }}
+    <div className="pointer-events-none fixed inset-x-0 top-4 z-100 flex justify-center px-4">
+      <div
+        data-testid="notice"
+        data-notice-type={notice.type}
+        role="status"
+        aria-live="polite"
+        className={cn(
+          'pointer-events-auto flex max-w-xl items-center gap-2.5 rounded-gc-lg border px-4 py-3 text-sm font-medium shadow-gc-popover',
+          'animate-in fade-in slide-in-from-top-2',
+          styles.className
+        )}
       >
-        <FiX size={16} />
-      </button>
+        <span className="flex shrink-0">{styles.icon}</span>
+        <span className="flex-1">{notice.message}</span>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss notification"
+          className="flex cursor-pointer opacity-70 transition-opacity hover:opacity-100"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
     </div>
   )
 }

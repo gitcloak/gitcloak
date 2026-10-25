@@ -1,5 +1,6 @@
 'use client'
 
+import { ThemeProvider } from "next-themes"
 import { SessionProvider } from "next-auth/react"
 import type { Session } from "next-auth"
 
@@ -20,5 +21,17 @@ const mockSession = MOCK_MODE
   : undefined
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  return <SessionProvider session={mockSession}>{children}</SessionProvider>
+  return (
+    <ThemeProvider
+      attribute="class"
+      // `system` is the default so the shell follows the OS. Playwright renders
+      // with `prefers-color-scheme: light` (pinned in playwright.config.ts), so
+      // the computed-style assertions in style-guide.spec.ts stay deterministic.
+      defaultTheme="system"
+      enableSystem
+      disableTransitionOnChange
+    >
+      <SessionProvider session={mockSession}>{children}</SessionProvider>
+    </ThemeProvider>
+  )
 }
