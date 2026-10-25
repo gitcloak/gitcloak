@@ -36,11 +36,11 @@ import {
   SidebarHeader,
   SidebarRail,
   SidebarSeparator,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
 
 import { FileTree } from './file-tree'
-import { ThemeToggle } from './theme-toggle'
 
 /** Visual state of the selected repository's lock. */
 export type RepoStatus = 'checking' | 'uninitialized' | 'locked' | 'unlocked'
@@ -107,6 +107,7 @@ interface AppSidebarProps {
   onRepoChange?: (repo: Repository | null) => void
   onUnlockRepo?: () => void
   onLockRepo?: () => void
+  onOpenSettings?: () => void
   repoStatus?: RepoStatus
   selectedFilePath?: string
 }
@@ -121,10 +122,12 @@ export function AppSidebar({
   onRepoChange,
   onUnlockRepo,
   onLockRepo,
+  onOpenSettings,
   repoStatus = 'checking',
   selectedFilePath,
 }: AppSidebarProps) {
   const isRepoUnlocked = repoStatus === 'unlocked'
+  const { isMobile, setOpenMobile } = useSidebar()
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(
     repositories.length > 0 ? repositories[0] : null
   )
@@ -134,6 +137,13 @@ export function AppSidebar({
   const handleRepoChange = (repo: Repository) => {
     setSelectedRepo(repo)
     onRepoChange?.(repo)
+  }
+
+  const handleOpenSettings = () => {
+    // On mobile the sidebar is a sheet; close it so the dialog is not stacked
+    // on top of it.
+    if (isMobile) setOpenMobile(false)
+    onOpenSettings?.()
   }
 
   const handleRefresh = () => {
@@ -175,7 +185,6 @@ export function AppSidebar({
           <span className="flex-1 truncate bg-gradient-to-br from-indigo-500 to-purple-600 bg-clip-text text-base font-bold text-transparent">
             GitCloak
           </span>
-          <ThemeToggle />
         </div>
       </SidebarHeader>
 
@@ -336,6 +345,7 @@ export function AppSidebar({
         <div className="flex gap-2">
           <Button
             data-testid="settings-button"
+            onClick={handleOpenSettings}
             variant="outline"
             size="sm"
             className="flex-1"

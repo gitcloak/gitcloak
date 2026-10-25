@@ -8,7 +8,9 @@ import { LoadingOverlay } from '@/components/loading-overlay'
 import { PasswordDialog } from '@/components/password-dialog'
 import { InputDialog } from '@/components/input-dialog'
 import { NoticeToast, type Notice } from '@/components/notice-toast'
+import { SettingsDialog } from '@/components/settings-dialog'
 import { SidebarInset } from '@/components/ui/sidebar'
+import { useAutosave } from '@/hooks/use-autosave'
 
 interface Repository {
   id: number
@@ -27,6 +29,15 @@ interface SelectedFile {
   owner: string
   repo: string
   isNew?: boolean // Flag to indicate this is a new file not yet saved
+  openId: number // Unique per opened file; keys the editor so it resets on open
+}
+
+// Source of `SelectedFile.openId`. Module scope is fine: this is client state
+// and only needs to be unique within the page session.
+let lastOpenId = 0
+function nextOpenId(): number {
+  lastOpenId += 1
+  return lastOpenId
 }
 
 interface ClientPageProps {
@@ -94,7 +105,15 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   // File name input dialog state
   const [fileNameDialog, setFileNameDialog] = useState(false)
 
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [autosave, setAutosave] = useAutosave()
+
   const repoKey = selectedRepo ? `${selectedRepo.owner}/${selectedRepo.name}` : null
+  // Autosave may only save when the file's repository password is already in
+  // memory, so it never opens a password dialog while the user is typing.
+  const canAutosave = selectedFile
+    ? Boolean(repoPasswords[`${selectedFile.owner}/${selectedFile.repo}`])
+    : false
 
   const showNotice = useCallback((type: Notice['type'], message: string) => {
     setNotice({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, type, message })
@@ -177,6 +196,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           sha: file.sha,
           owner: file.owner,
           repo: file.repo,
+          openId: nextOpenId(),
         })
         showNotice('success', `Unlocked "${file.path}" with an alternative password.`)
       },
@@ -318,7 +338,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         content = decrypted
       }
 
-      setSelectedFile({ path, content, sha: data.sha, owner, repo })
+      setSelectedFile({ path, content, sha: data.sha, owner, repo, openId: nextOpenId() })
     } catch (error) {
       console.error('Error loading file:', error)
       showNotice(
@@ -380,6 +400,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
       owner: selectedRepo.owner,
       repo: selectedRepo.name,
       isNew: true,
+      openId: nextOpenId(),
     })
   }
 
@@ -556,13 +577,23 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         onRepoChange={setSelectedRepo}
         onUnlockRepo={handleUnlockRepo}
         onLockRepo={handleLockRepo}
+        onOpenSettings={() => setSettingsOpen(true)}
         repoStatus={repoStatus}
         selectedFilePath={selectedFile?.path}
       />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        autosave={autosave}
+        onAutosaveChange={setAutosave}
+      />
       <SidebarInset className="min-w-0 overflow-hidden">
         <EditorArea
+          key={selectedFile?.openId ?? 'none'}
           selectedFile={selectedFile}
           isLoading={isLoading}
+          autosave={autosave}
+          canAutosave={canAutosave}
           onSave={handleSaveFile}
         />
       </SidebarInset>

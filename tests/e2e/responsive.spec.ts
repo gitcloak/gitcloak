@@ -38,15 +38,19 @@ test.describe('Responsive app shell', () => {
     await expect(sheet).toBeHidden()
   })
 
-  test('the theme toggle switches the document to the dark palette', async ({
+  test('the settings theme choice switches the document to the dark palette', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 375, height: 667 })
     await page.goto('/app')
     await page.locator('[data-slot="sidebar-trigger"]').last().click()
 
-    await page.getByTestId('theme-toggle').click()
-    await page.getByRole('menuitem', { name: 'Dark' }).click()
+    // Opening settings from the sheet closes the sheet and shows the dialog.
+    await page.getByTestId('settings-button').click()
+    await expect(page.getByTestId('settings-dialog')).toBeVisible()
+    await expect(page.locator('[data-sidebar="sidebar"]')).toBeHidden()
+
+    await page.getByTestId('theme-option-dark').click()
 
     const html = page.locator('html')
     await expect(html).toHaveClass(/dark/)
@@ -61,9 +65,11 @@ test.describe('Responsive app shell', () => {
     })
     expect(dark).toEqual({ surface: '#0d1117', fg: '#e6edf3' })
 
-    await page.getByTestId('theme-toggle').click()
-    await page.getByRole('menuitem', { name: 'Light' }).click()
+    await page.getByTestId('theme-option-light').click()
     await expect(html).not.toHaveClass(/dark/)
+
+    await page.getByTestId('settings-done').click()
+    await expect(page.getByTestId('settings-dialog')).toBeHidden()
   })
 
   test('desktop keeps the inline sidebar and collapses it with the trigger', async ({

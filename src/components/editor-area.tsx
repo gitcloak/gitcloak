@@ -1,12 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Clock, PenLine, Save } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
+
+/** Idle time after the last keystroke before an autosave runs. */
+const AUTOSAVE_DELAY_MS = 1500
 
 interface SelectedFile {
   path: string
@@ -15,51 +18,103 @@ interface SelectedFile {
   owner: string
   repo: string
   isNew?: boolean
+  /** Changes whenever a different file is opened, so the editor can reset. */
+  openId: number
 }
 
 interface EditorAreaProps {
   selectedFile: SelectedFile | null
   isLoading: boolean
+  /** Save automatically after the user stops typing. */
+  autosave: boolean
+  /**
+   * Whether a save can complete without asking for a password (the file's
+   * repository is unlocked). Autosave never opens a password dialog.
+   */
+  canAutosave: boolean
   onSave: (content: string) => Promise<void>
 }
 
-export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps) {
-  const [content, setContent] = useState('')
+export function EditorArea({
+  selectedFile,
+  isLoading,
+  autosave,
+  canAutosave,
+  onSave,
+}: EditorAreaProps) {
+  // The parent keys this component by `openId`, so each opened file starts
+  // with fresh state. Saving does not remount the editor, which keeps text the
+  // user types while a save is in flight.
+  const [content, setContent] = useState(selectedFile?.content ?? '')
   const [hasChanges, setHasChanges] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const [savedContent, setSavedContent] = useState('')
-
-  // Update content when selectedFile changes
-  useEffect(() => {
-    if (selectedFile) {
-      setContent(selectedFile.content)
-      setSavedContent(selectedFile.content)
-      setHasChanges(false)
-    }
-  }, [selectedFile])
+  const [savedContent, setSavedContent] = useState(selectedFile?.content ?? '')
+  // Set when an autosave fails. Autosave waits for the next edit before trying
+  // again, instead of retrying and showing an error every few seconds.
+  const [autosaveFailed, setAutosaveFailed] = useState(false)
 
   const handleContentChange = (newContent: string) => {
     setContent(newContent)
     setHasChanges(newContent !== savedContent)
+    setAutosaveFailed(false)
   }
 
-  const handleSave = async () => {
-    // Take a snapshot of the content to save
-    const contentToSave = content
-    setSavedContent(contentToSave)
-    setHasChanges(false)
-    setIsSaving(true)
+  const handleSave = useCallback(
+    async (source: 'manual' | 'autosave' = 'manual') => {
+      // Take a snapshot of the content to save
+      const contentToSave = content
+      const previousSaved = savedContent
+      setSavedContent(contentToSave)
+      setHasChanges(false)
+      setAutosaveFailed(false)
+      setIsSaving(true)
 
-    // Save in background
-    try {
-      await onSave(contentToSave)
-    } catch {
-      // If save fails, restore the hasChanges state
-      setHasChanges(content !== savedContent)
-    } finally {
-      setIsSaving(false)
+      // Save in background
+      try {
+        await onSave(contentToSave)
+      } catch {
+        // The snapshot never reached GitHub, so keep the last saved baseline
+        // and treat the edit as still unsaved.
+        setSavedContent(previousSaved)
+        setHasChanges(contentToSave !== previousSaved)
+        setAutosaveFailed(source === 'autosave')
+      } finally {
+        setIsSaving(false)
+      }
+    },
+    [content, onSave, savedContent]
+  )
+
+  const hasFile = Boolean(selectedFile)
+
+  // Debounced autosave: every keystroke changes `handleSave`, which restarts
+  // the timer, so the save runs once the user pauses.
+  useEffect(() => {
+    if (
+      !autosave ||
+      !canAutosave ||
+      !hasFile ||
+      !hasChanges ||
+      isSaving ||
+      isLoading ||
+      autosaveFailed
+    ) {
+      return
     }
-  }
+    const timer = window.setTimeout(() => {
+      void handleSave('autosave')
+    }, AUTOSAVE_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [
+    autosave,
+    canAutosave,
+    hasFile,
+    hasChanges,
+    isSaving,
+    isLoading,
+    autosaveFailed,
+    handleSave,
+  ])
 
   const canSave = Boolean(selectedFile) && hasChanges && !isSaving
 
@@ -109,7 +164,7 @@ export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps)
           data-state={
             !selectedFile ? 'empty' : hasChanges ? 'dirty' : 'clean'
           }
-          onClick={handleSave}
+          onClick={() => void handleSave()}
           disabled={!canSave}
           variant={canSave ? 'default' : 'outline'}
           size="sm"
@@ -185,6 +240,15 @@ export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps)
                 : 'Ready'}
         </div>
         <div className="flex items-center gap-4">
+          {autosave && selectedFile && (
+            <div
+              data-testid="autosave-status"
+              data-state={canAutosave ? 'on' : 'paused'}
+              className="whitespace-nowrap"
+            >
+              {canAutosave ? 'Autosave on' : 'Autosave paused · unlock to resume'}
+            </div>
+          )}
           <div data-testid="editor-stats" className="tabular-nums">
             {selectedFile
               ? `${content.split('\n').length} lines | ${content.length} chars`

@@ -15,7 +15,8 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 - **Real-time Editing**: Edit files with live status updates and background saving
 - **File Tree Navigation**: Browse and manage your repository files easily
 - **Responsive Shell**: Collapsible sidebar that becomes an off-canvas sheet on mobile
-- **Dark Mode**: Light/dark/system themes via `next-themes`
+- **Dark Mode**: Light/dark/system themes via `next-themes`, chosen in Settings
+- **Autosave**: Optionally save a moment after you stop typing (Settings → Editor)
 - **GitHub OAuth**: Secure authentication through GitHub
 
 ## How It Works
