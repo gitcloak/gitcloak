@@ -37,6 +37,7 @@ Be respectful, inclusive, and professional in all interactions.
    - Update documentation as needed
 3. **Test your changes**:
    - Run `npm run dev` to test locally
+   - Run `npm run lint` to check ESLint (flat config in `eslint.config.mjs`)
    - Run `npm run build` to ensure it builds successfully
    - Run `npm test` (unit + end-to-end tests), or `npm run test:unit` /
      `npm run test:e2e` individually

@@ -53,7 +53,7 @@ export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps)
     // Save in background
     try {
       await onSave(contentToSave)
-    } catch (error) {
+    } catch {
       // If save fails, restore the hasChanges state
       setHasChanges(content !== savedContent)
     } finally {

@@ -1,6 +1,15 @@
 import NextAuth from "next-auth"
 import GitHub from "next-auth/providers/github"
 
+/**
+ * `profile` is typed as the generic `Profile`; the GitHub provider's payload is
+ * a `GitHubProfile`, which carries `login`.
+ */
+function githubLogin(profile: unknown): string | undefined {
+  const login = (profile as { login?: unknown })?.login
+  return typeof login === "string" ? login : undefined
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   secret: process.env.AUTH_SECRET,
   providers: [
@@ -42,7 +51,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         })
       }
       if (profile) {
-        token.login = (profile as any).login
+        token.login = githubLogin(profile)
       }
       return token
     },

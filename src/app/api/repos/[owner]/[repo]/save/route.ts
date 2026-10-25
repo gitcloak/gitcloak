@@ -36,14 +36,14 @@ export async function POST(
       sha: result.sha,
       path: result.path,
     })
-  } catch (error: any) {
+  } catch (error) {
     if (isBackendConflict(error)) {
       return NextResponse.json({ error: error.message }, { status: 409 })
     }
 
     console.error('Error saving file:', error)
     return NextResponse.json(
-      { error: error.message || 'Failed to save file' },
+      { error: error instanceof Error ? error.message : 'Failed to save file' },
       { status: 500 }
     )
   }

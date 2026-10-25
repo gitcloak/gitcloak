@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import { signOut } from 'next-auth/react'
 import {
   AlertCircle,
@@ -137,14 +137,13 @@ export function AppSidebar({
   }
 
   const handleRefresh = () => {
-    if ((window as any).__fileTreeRefresh) {
-      (window as any).__fileTreeRefresh()
-    }
+    window.__fileTreeRefresh?.()
   }
 
-  const handleLoadingChange = (isLoading: boolean) => {
+  // Stable identity: `FileTree` re-runs its load effect when this changes.
+  const handleLoadingChange = useCallback((isLoading: boolean) => {
     setIsRefreshing(isLoading)
-  }
+  }, [])
 
   const handleSignOut = async () => {
     if (isSigningOut) return

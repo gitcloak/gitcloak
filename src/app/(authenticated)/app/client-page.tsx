@@ -434,7 +434,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
 
       showNotice('success', `Saved ${savePath}`)
       // Refresh the file tree so newly created files show up immediately.
-      ;(window as any).__fileTreeRefresh?.()
+      window.__fileTreeRefresh?.()
     }
 
     try {

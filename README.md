@@ -290,6 +290,17 @@ output, fresh-salt non-determinism, wrong-password and tamper rejection,
 unicode/empty content) and `src/lib/gitcloak.ts` (`.gitcloak` verification file
 creation and password verification). Run everything with `npm test`.
 
+## Linting
+
+ESLint runs through its own CLI (`next lint` is deprecated in Next 15 and
+removed in Next 16) against the flat config in `eslint.config.mjs`, which
+bridges `next/core-web-vitals` and `next/typescript` in via `FlatCompat`:
+
+```bash
+npm run lint       # check
+npm run lint:fix   # check and autofix
+```
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

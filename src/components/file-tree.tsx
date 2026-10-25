@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { ChevronDown, ChevronRight, Ellipsis, File as FileIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -145,7 +145,7 @@ export function FileTree({
   const [error, setError] = useState<string | null>(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
 
-  const loadRootContents = async () => {
+  const loadRootContents = useCallback(async () => {
     setIsLoading(true)
     onLoadingChange?.(true)
     setError(null)
@@ -177,19 +177,18 @@ export function FileTree({
       setIsLoading(false)
       onLoadingChange?.(false)
     }
-  }
+  }, [owner, repo, onLoadingChange, onRefresh])
 
   useEffect(() => {
     loadRootContents()
-  }, [owner, repo, refreshTrigger])
+  }, [loadRootContents, refreshTrigger])
 
   // Expose refresh function
   useEffect(() => {
     // Store refresh function on window for parent to call
-    ;(window as any).__fileTreeRefresh = () =>
-      setRefreshTrigger((prev) => prev + 1)
+    window.__fileTreeRefresh = () => setRefreshTrigger((prev) => prev + 1)
     return () => {
-      delete (window as any).__fileTreeRefresh
+      delete window.__fileTreeRefresh
     }
   }, [])
 
