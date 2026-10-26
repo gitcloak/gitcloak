@@ -1,12 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Clock, PenLine, Save } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
+
+/** Idle time after the last keystroke before an autosave runs. */
+const AUTOSAVE_DELAY_MS = 1500
 
 interface SelectedFile {
   path: string
@@ -15,51 +18,106 @@ interface SelectedFile {
   owner: string
   repo: string
   isNew?: boolean
+  /** Changes whenever a different file is opened, so the editor can reset. */
+  openId: number
 }
 
 interface EditorAreaProps {
   selectedFile: SelectedFile | null
   isLoading: boolean
+  /** Save automatically after the user stops typing. */
+  autosave: boolean
+  /**
+   * Whether a save can complete without asking for a password (the file's
+   * repository is unlocked). Autosave never opens a password dialog.
+   */
+  canAutosave: boolean
   onSave: (content: string) => Promise<void>
 }
 
-export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps) {
-  const [content, setContent] = useState('')
-  const [hasChanges, setHasChanges] = useState(false)
+export function EditorArea({
+  selectedFile,
+  isLoading,
+  autosave,
+  canAutosave,
+  onSave,
+}: EditorAreaProps) {
+  // The parent keys this component by `openId`, so each opened file starts
+  // with fresh state. Saving does not remount the editor, which keeps text the
+  // user types while a save is in flight.
+  // `content` is what the user sees and is never blocked by a save.
+  // `savedContent` is the last snapshot that reached GitHub.
+  const [content, setContent] = useState(selectedFile?.content ?? '')
+  const [savedContent, setSavedContent] = useState(selectedFile?.content ?? '')
+  // The snapshot waiting for the save slot. Only one save runs at a time, and
+  // a newer snapshot replaces an older queued one because each save writes the
+  // whole file. Keystrokes therefore never queue up as separate saves.
+  const [queued, setQueued] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
-  const [savedContent, setSavedContent] = useState('')
+  // Set when an autosave fails. Autosave waits for the next edit before trying
+  // again, instead of retrying and showing an error every few seconds.
+  const [autosaveFailed, setAutosaveFailed] = useState(false)
 
-  // Update content when selectedFile changes
-  useEffect(() => {
-    if (selectedFile) {
-      setContent(selectedFile.content)
-      setSavedContent(selectedFile.content)
-      setHasChanges(false)
-    }
-  }, [selectedFile])
+  const hasChanges = content !== savedContent
+  const hasFile = Boolean(selectedFile)
 
   const handleContentChange = (newContent: string) => {
     setContent(newContent)
-    setHasChanges(newContent !== savedContent)
+    setAutosaveFailed(false)
   }
 
-  const handleSave = async () => {
-    // Take a snapshot of the content to save
-    const contentToSave = content
-    setSavedContent(contentToSave)
-    setHasChanges(false)
-    setIsSaving(true)
-
-    // Save in background
-    try {
-      await onSave(contentToSave)
-    } catch {
-      // If save fails, restore the hasChanges state
-      setHasChanges(content !== savedContent)
-    } finally {
-      setIsSaving(false)
+  // Autosave: once typing pauses, queue the current text. Every keystroke
+  // restarts the timer, and typing while a save runs does not stop it.
+  useEffect(() => {
+    if (
+      !autosave ||
+      !canAutosave ||
+      !hasFile ||
+      !hasChanges ||
+      isLoading ||
+      autosaveFailed
+    ) {
+      return
     }
-  }
+    const timer = window.setTimeout(() => setQueued(content), AUTOSAVE_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [
+    autosave,
+    canAutosave,
+    hasFile,
+    hasChanges,
+    isLoading,
+    autosaveFailed,
+    content,
+  ])
+
+  // Run the queued snapshot once the previous save has finished. Running it
+  // from an effect means `onSave` comes from the render that already holds the
+  // new file SHA, so consecutive saves do not conflict on GitHub.
+  useEffect(() => {
+    if (isSaving || queued === null) return
+    if (queued === savedContent) {
+      // Already saved (e.g. the text was typed back, or the timer fired during
+      // a save of the same text).
+      setQueued(null)
+      return
+    }
+
+    const snapshot = queued
+    setQueued(null)
+    setIsSaving(true)
+    void onSave(snapshot)
+      .then(() => {
+        setSavedContent(snapshot)
+        setAutosaveFailed(false)
+      })
+      .catch(() => {
+        // The snapshot never reached GitHub, so `savedContent` still holds the
+        // last saved text and the edit stays unsaved.
+        setAutosaveFailed(true)
+      })
+      .finally(() => setIsSaving(false))
+  }, [isSaving, queued, savedContent, onSave])
 
   const canSave = Boolean(selectedFile) && hasChanges && !isSaving
 
@@ -109,7 +167,7 @@ export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps)
           data-state={
             !selectedFile ? 'empty' : hasChanges ? 'dirty' : 'clean'
           }
-          onClick={handleSave}
+          onClick={() => setQueued(content)}
           disabled={!canSave}
           variant={canSave ? 'default' : 'outline'}
           size="sm"
@@ -185,6 +243,15 @@ export function EditorArea({ selectedFile, isLoading, onSave }: EditorAreaProps)
                 : 'Ready'}
         </div>
         <div className="flex items-center gap-4">
+          {autosave && selectedFile && (
+            <div
+              data-testid="autosave-status"
+              data-state={canAutosave ? 'on' : 'paused'}
+              className="whitespace-nowrap"
+            >
+              {canAutosave ? 'Autosave on' : 'Autosave paused · unlock to resume'}
+            </div>
+          )}
           <div data-testid="editor-stats" className="tabular-nums">
             {selectedFile
               ? `${content.split('\n').length} lines | ${content.length} chars`
