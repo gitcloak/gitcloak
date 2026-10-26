@@ -2,6 +2,10 @@
 
 **Secure, encrypted file editing for GitHub repositories**
 
+[![CI](https://github.com/gitcloak/gitcloak/actions/workflows/ci.yml/badge.svg)](https://github.com/gitcloak/gitcloak/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/gitcloak/gitcloak/actions/workflows/codeql.yml/badge.svg)](https://github.com/gitcloak/gitcloak/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 GitCloak is a web application that allows you to edit and store encrypted files directly in your GitHub repositories. All encryption and decryption happens client-side in your browser using the industry-standard [age encryption format](https://age-encryption.org/), ensuring your sensitive data never leaves your control.
 
 ## Features
@@ -64,7 +68,7 @@ Your files remain in your GitHub repository, but they're encrypted at rest. Only
 
 1. **Clone the repository**:
    \`\`\`bash
-   git clone https://github.com/yourusername/gitcloak.git
+   git clone https://github.com/gitcloak/gitcloak.git
    cd gitcloak
    \`\`\`
 
@@ -304,7 +308,7 @@ npm run lint:fix   # check and autofix
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Changes to `main` are only accepted through reviewed pull requests that pass CI.
 
 ### Development Guidelines
 
@@ -316,7 +320,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ### Reporting Issues
 
-If you find a bug or have a feature request, please open an issue on GitHub.
+If you find a bug or have a feature request, please [open an issue](https://github.com/gitcloak/gitcloak/issues/new/choose). Security vulnerabilities must be reported privately; see [SECURITY.md](SECURITY.md).
+
+### Community
+
+This project is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Security Considerations
 

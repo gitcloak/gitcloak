@@ -1,0 +1,63 @@
+name: Bug report
+description: Report something that is not working as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please search existing issues first.
+        **Do not include passwords, repository keys, tokens or decrypted file contents in this issue.**
+        For security vulnerabilities, use the private reporting described in [SECURITY.md](https://github.com/gitcloak/gitcloak/blob/main/SECURITY.md) instead.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear and concise description of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Storage backend
+      description: Which backend were you using? See the README "Storage Backends" section.
+      options:
+        - git (GitHub)
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser and version, operating system, Node.js version, and how you run GitCloak (local dev, production build, Vercel, other).
+      placeholder: Chrome 130 on macOS 15, Node 22.11, `npm run dev`
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Browser console output or server logs. Redact any sensitive information.
+      render: shell
