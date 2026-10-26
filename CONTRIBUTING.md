@@ -86,6 +86,10 @@ src/
 
 ## Security
 
+Read [docs/architecture.md](docs/architecture.md) first: it defines the trust
+boundaries, security invariants, layering rules and the review checklist that
+every change (and every AI agent working in this repo) must follow.
+
 - All encryption/decryption must happen client-side
 - Never transmit passwords to the server
 - Never store passwords on disk

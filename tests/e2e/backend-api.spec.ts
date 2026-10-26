@@ -70,4 +70,48 @@ test.describe('Backend API contract', () => {
     // Original seed content is back.
     expect(state['mockuser/scratch']['notes.md']).toContain('Scratch')
   })
+
+  test('save rejects plaintext, non-.age paths and workflow paths', async ({ request }) => {
+    const armor = '-----BEGIN AGE ENCRYPTED FILE-----\nfake\n-----END AGE ENCRYPTED FILE-----'
+    const bad = [
+      { path: 'plain.md.age', content: 'not encrypted' },
+      { path: 'plain.md', content: armor },
+      { path: '.github/workflows/x.yml.age', content: armor },
+      { path: '../escape.age', content: armor },
+    ]
+    for (const data of bad) {
+      const response = await request.post('/api/repos/mockuser/scratch/save', { data })
+      expect(response.status(), JSON.stringify(data)).toBe(400)
+    }
+  })
+
+  test('save rejects cross-origin browser requests', async ({ request }) => {
+    const response = await request.post('/api/repos/mockuser/scratch/save', {
+      headers: { origin: 'https://evil.example' },
+      data: {
+        path: 'x.md.age',
+        content: '-----BEGIN AGE ENCRYPTED FILE-----\nfake\n-----END AGE ENCRYPTED FILE-----',
+      },
+    })
+    expect(response.status()).toBe(403)
+  })
+
+  test('contents rejects traversal paths and bad repository names', async ({ request }) => {
+    const traversal = await request.get('/api/repos/mockuser/scratch/contents?path=../x')
+    expect(traversal.status()).toBe(400)
+    const badRepo = await request.get('/api/repos/mockuser/..%2Fx/contents')
+    expect(badRepo.status()).toBe(400)
+  })
+
+  test('responses carry security headers and a CSP without remote scripts', async ({ request }) => {
+    const response = await request.get('/')
+    const headers = response.headers()
+    expect(headers['x-content-type-options']).toBe('nosniff')
+    expect(headers['x-frame-options']).toBe('DENY')
+    expect(headers['content-security-policy']).toContain("frame-ancestors 'none'")
+    expect(headers['content-security-policy']).toContain("object-src 'none'")
+    expect(headers['content-security-policy']).not.toContain('vercel.live')
+    const api = await request.get('/api/repos/mockuser/scratch/contents')
+    expect(api.headers()['cache-control']).toContain('no-store')
+  })
 })

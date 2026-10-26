@@ -16,7 +16,8 @@ test.describe('Mock authentication', () => {
     const session = await response.json()
     expect(session.user.login).toBe('mockuser')
     expect(session.user.email).toBe('mock@example.com')
-    expect(session.accessToken).toBe('mock-access-token')
+    // The GitHub token must never be part of the browser-visible session.
+    expect(session.accessToken).toBeUndefined()
     expect(session.expires).toBeTruthy()
   })
 
