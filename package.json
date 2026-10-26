@@ -4,9 +4,13 @@
   "description": "Secure, encrypted file editing for GitHub repositories with client-side age encryption",
   "author": "GitCloak Contributors",
   "license": "MIT",
+  "homepage": "https://gitcloak-pearl.vercel.app",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/gitcloak.git"
+    "url": "git+https://github.com/gitcloak/gitcloak.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gitcloak/gitcloak/issues"
   },
   "keywords": [
     "encryption",

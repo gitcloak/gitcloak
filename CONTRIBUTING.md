@@ -4,14 +4,14 @@ Thank you for your interest in contributing to GitCloak! This document provides 
 
 ## Code of Conduct
 
-Be respectful, inclusive, and professional in all interactions.
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By participating, you are expected to uphold it.
 
 ## How to Contribute
 
 ### Reporting Bugs
 
-1. Check if the bug has already been reported in [Issues](https://github.com/yourusername/gitcloak/issues)
-2. If not, create a new issue with:
+1. Check if the bug has already been reported in [Issues](https://github.com/gitcloak/gitcloak/issues)
+2. If not, [open a bug report](https://github.com/gitcloak/gitcloak/issues/new/choose) with:
    - Clear, descriptive title
    - Steps to reproduce the bug
    - Expected behavior
@@ -19,17 +19,28 @@ Be respectful, inclusive, and professional in all interactions.
    - Screenshots if applicable
    - Environment details (browser, OS, etc.)
 
+Never include passwords, repository keys, tokens or decrypted file contents in an issue.
+
 ### Suggesting Features
 
 1. Check if the feature has already been suggested
-2. Create a new issue with:
+2. [Open a feature request](https://github.com/gitcloak/gitcloak/issues/new/choose) with:
    - Clear description of the feature
    - Use cases and benefits
    - Potential implementation approach (optional)
 
 ### Pull Requests
 
-1. **Fork the repository** and create a new branch from `main`
+The `main` branch is protected. Every change reaches it through a pull request, and direct pushes are blocked for everyone, including maintainers. A pull request can be merged when:
+
+- All CI checks pass (lint, unit tests, end-to-end tests and build)
+- It has an approving review from a maintainer
+- All review conversations are resolved
+- It is squash-merged or rebased onto `main` (merge commits are not used, so history stays linear)
+
+To contribute:
+
+1. **Create a branch from `main`**. External contributors should fork the repository first; maintainers can create a branch in the repository directly.
 2. **Make your changes**:
    - Follow the existing code style
    - Use TypeScript for type safety
@@ -45,7 +56,7 @@ Be respectful, inclusive, and professional in all interactions.
 4. **Commit your changes**:
    - Use clear, descriptive commit messages
    - Reference issue numbers if applicable
-5. **Push to your fork** and submit a pull request
+5. **Open a pull request** against `main` and fill in the pull request template
 6. **Wait for review** and address any feedback
 
 ## Development Setup
@@ -79,7 +90,7 @@ src/
 - Never transmit passwords to the server
 - Never store passwords on disk
 - Follow secure coding practices
-- Report security vulnerabilities privately
+- Report security vulnerabilities privately, as described in [SECURITY.md](SECURITY.md). Do not open a public issue or pull request for them.
 
 ## Testing
 
