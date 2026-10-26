@@ -197,7 +197,7 @@ Do not paper over these; fix them or consciously carry them. Remove an item when
 5. **First-save race.** `.gitcloak` is created with no `sha`; concurrent first saves can overwrite each other, and a failed second step leaves an initialised repo with no files. Use a create-only write and handle 422 explicitly.
 6. **No rotation.** Changing the repository password needs a re-encrypt flow; old commits remain decryptable with the old password. Document this limit.
 7. **Nonce-based CSP.** `script-src` still allows `'unsafe-inline'`. Move to per-request nonces (middleware) when feasible.
-8. **CI and supply chain.** No `.github/` workflows: add lint/unit/e2e/`npm audit`, Dependabot, CodeQL, branch protection and `SECURITY.md` with a private reporting channel.
+8. **CI gaps.** CI (lint, unit, build, e2e), Dependabot, CodeQL and `SECURITY.md` exist. Still missing: an `npm audit --omit=dev` step and the "no mock code in the production bundle" grep from section 8 in CI.
 9. **Dead code.** `lib/github.ts` and `lib/github-app.ts` are unused; delete them rather than extend them.
 10. **Pagination.** `listRepositories` reads only the first 100 repos.
 11. **Metadata leakage.** File names and commit messages are plaintext. Consider optional filename obfuscation and a generic commit message setting.
