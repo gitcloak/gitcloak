@@ -17,7 +17,7 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 - **Password Verification**: Secure password verification without storing the password
 - **Interoperable**: Uses age format - decrypt your files anywhere with age-compatible tools
 - **Real-time Editing**: Edit files with live status updates and background saving
-- **Live Markdown**: Headings, emphasis, links, lists, quotes and code render as you type, Obsidian-style; the stored file is always the plain Markdown you wrote
+- **Live Markdown**: Headings, emphasis, links, lists, quotes and code render as you type, Obsidian-style; the stored file is always the plain Markdown you wrote. A Source/Rendered toggle switches to the raw text; non-Markdown files always show raw text
 - **File Tree Navigation**: Browse and manage your repository files easily
 - **Responsive Shell**: Collapsible sidebar that becomes an off-canvas sheet on mobile
 - **Dark Mode**: Light/dark/system themes via `next-themes`, chosen in Settings

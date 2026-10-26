@@ -1,13 +1,16 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Clock, PenLine, Save } from 'lucide-react'
+import { Clock, Code2, Eye, PenLine, Save } from 'lucide-react'
 
 import { MarkdownEditor } from '@/components/markdown-editor'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
+
+/** Markdown files (`.md`, `.markdown`, optionally encrypted as `.age`). */
+const MARKDOWN_FILE = /\.(md|markdown)(\.age)?$/i
 
 /** Idle time after the last keystroke before an autosave runs. */
 const AUTOSAVE_DELAY_MS = 1500
@@ -61,6 +64,12 @@ export function EditorArea({
 
   const hasChanges = content !== savedContent
   const hasFile = Boolean(selectedFile)
+  // Markdown can be shown rendered or as source; the choice resets with each
+  // opened file because this component is keyed by `openId`. Other files are
+  // always shown as source, since rendering would misread e.g. `# comments`.
+  const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered')
+  const isMarkdown = Boolean(selectedFile && MARKDOWN_FILE.test(selectedFile.path))
+  const rendered = isMarkdown && viewMode === 'rendered'
 
   const handleContentChange = (newContent: string) => {
     setContent(newContent)
@@ -163,6 +172,38 @@ export function EditorArea({
           </div>
         </div>
 
+        {isMarkdown && (
+          <Button
+            data-testid="view-mode-toggle"
+            data-mode={viewMode}
+            onClick={() =>
+              setViewMode(viewMode === 'rendered' ? 'source' : 'rendered')
+            }
+            variant="outline"
+            size="sm"
+            aria-label={
+              viewMode === 'rendered'
+                ? 'Show raw Markdown source'
+                : 'Show rendered Markdown'
+            }
+            title={
+              viewMode === 'rendered'
+                ? 'Show raw Markdown source'
+                : 'Show rendered Markdown'
+            }
+            className="shrink-0"
+          >
+            {viewMode === 'rendered' ? (
+              <Code2 className="size-4" />
+            ) : (
+              <Eye className="size-4" />
+            )}
+            <span className="hidden sm:inline">
+              {viewMode === 'rendered' ? 'Source' : 'Rendered'}
+            </span>
+          </Button>
+        )}
+
         <Button
           data-testid="save-button"
           data-state={
@@ -196,7 +237,11 @@ export function EditorArea({
             </div>
           </div>
         ) : selectedFile ? (
-          <MarkdownEditor value={content} onChange={handleContentChange} />
+          <MarkdownEditor
+            value={content}
+            onChange={handleContentChange}
+            rendered={rendered}
+          />
         ) : (
           <div
             data-testid="editor-empty"

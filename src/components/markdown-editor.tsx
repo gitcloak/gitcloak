@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { markdown, markdownKeymap } from '@codemirror/lang-markdown'
-import { EditorState } from '@codemirror/state'
+import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { GFM } from '@lezer/markdown'
 
-import { livePreview } from '@/lib/live-preview'
+import { editorTheme, livePreview, sourceView } from '@/lib/live-preview'
 import { formattingKeymap } from '@/lib/live-preview-commands'
 
 interface MarkdownEditorProps {
@@ -15,19 +15,29 @@ interface MarkdownEditorProps {
   value: string
   /** Called with the full text after every edit made in the editor. */
   onChange: (value: string) => void
+  /**
+   * Render Markdown live (the default). When false the editor shows the raw
+   * source. The document is the same either way; only the display changes.
+   */
+  rendered?: boolean
 }
 
 /**
- * Markdown editor that renders as you type (Obsidian/Bear-style live preview).
- * The document is always the raw Markdown; see `lib/live-preview.ts`.
+ * Markdown editor that renders as you type (Obsidian/Bear-style live preview),
+ * or shows the raw source. The document is always the raw Markdown; see
+ * `lib/live-preview.ts`.
  */
-export function MarkdownEditor({ value, onChange }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, rendered = true }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
   // The view is created once, from the value present at mount. Later values
-  // flow in through the effect below.
+  // flow in through the effects below.
   const [initialValue] = useState(value)
+  const [initialRendered] = useState(rendered)
+  // Swaps the live-preview decorations for the source view without recreating
+  // the editor, so the cursor, selection and undo history survive the switch.
+  const [displayMode] = useState(() => new Compartment())
 
   useEffect(() => {
     onChangeRef.current = onChange
@@ -47,7 +57,8 @@ export function MarkdownEditor({ value, onChange }: MarkdownEditorProps) {
           keymap.of([...markdownKeymap, ...historyKeymap, ...defaultKeymap]),
           formattingKeymap,
           markdown({ extensions: [GFM] }),
-          livePreview,
+          displayMode.of(initialRendered ? livePreview : sourceView),
+          editorTheme,
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({
             'aria-label': 'File content',
@@ -72,7 +83,13 @@ export function MarkdownEditor({ value, onChange }: MarkdownEditorProps) {
       view.destroy()
       viewRef.current = null
     }
-  }, [initialValue])
+  }, [initialValue, initialRendered, displayMode])
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: displayMode.reconfigure(rendered ? livePreview : sourceView),
+    })
+  }, [rendered, displayMode])
 
   useEffect(() => {
     const view = viewRef.current

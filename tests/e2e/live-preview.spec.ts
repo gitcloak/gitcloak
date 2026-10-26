@@ -179,6 +179,60 @@ test.describe('Live preview editor', () => {
     await expectEditorValue(page, 'first')
   })
 
+  test('switches a Markdown file between rendered and source views', async ({ page }) => {
+    await openFile(page)
+    const markdown = '# Live title\n\nSome **bold** text.\n'
+    await fillEditor(page, markdown)
+    await expect(page.locator('.cm-lp-h1')).toHaveText('Live title')
+
+    // The toggle sits left of Save and starts in the rendered view.
+    const toggle = page.getByTestId('view-mode-toggle')
+    await expect(toggle).toHaveAttribute('data-mode', 'rendered')
+    const toggleBox = await toggle.boundingBox()
+    const saveBox = await page.getByTestId('save-button').boundingBox()
+    expect(toggleBox!.x + toggleBox!.width).toBeLessThanOrEqual(saveBox!.x)
+
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('data-mode', 'source')
+    await expect(page.locator('.cm-lp-h1')).toHaveCount(0)
+    await expect(page.locator('.cm-content')).toContainText('# Live title')
+    await expect(page.locator('.cm-content')).toContainText('**bold**')
+    await expect(page.locator('.cm-editor')).toHaveClass(/cm-lp-source/)
+    await expectEditorValue(page, markdown)
+
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('data-mode', 'rendered')
+    await expect(page.locator('.cm-lp-h1')).toHaveText('Live title')
+    await expect(page.locator('.cm-editor')).not.toHaveClass(/cm-lp-source/)
+    await expectEditorValue(page, markdown)
+  })
+
+  test('keeps the cursor and undo history when switching views', async ({ page }) => {
+    await openFile(page)
+    await fillEditor(page, 'first')
+    await page.waitForTimeout(700)
+    await fillEditor(page, 'second')
+
+    await page.getByTestId('view-mode-toggle').click()
+    await page.locator('.cm-content').click()
+    await page.keyboard.press('ControlOrMeta+z')
+    await expectEditorValue(page, 'first')
+  })
+
+  test('shows non-Markdown files as source only, with no view toggle', async ({ page }) => {
+    await openFile(page)
+    await page.getByTestId('new-file-button').click()
+    await page.getByTestId('new-file-input').fill('draft.txt')
+    await page.getByTestId('new-file-submit').click()
+    await expect(page.getByTestId('selected-file-path')).toHaveText('draft.txt')
+
+    await expect(page.getByTestId('view-mode-toggle')).toHaveCount(0)
+    await fillEditor(page, '# not a heading in a text file\n')
+    await expect(page.locator('.cm-lp-h1')).toHaveCount(0)
+    await expect(page.locator('.cm-content')).toContainText('# not a heading')
+    await expectEditorValue(page, '# not a heading in a text file\n')
+  })
+
   test('saves the raw Markdown exactly as typed', async ({ page }) => {
     const markdown = [
       '# Saved title',

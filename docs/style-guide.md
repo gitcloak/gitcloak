@@ -112,6 +112,7 @@ only code is monospace.
 | Section label (uppercase) | `0.75rem` (12px) | 600 | `--gc-fg-muted` | `uppercase`, `tracking-wide` |
 | Micro / badge | `0.6875rem`–`0.75rem` | 600 | contextual | pills, status |
 | Editor body (live Markdown) | `15px` | 400 | `--gc-fg` | `line-height: 1.7`; headings scale from it |
+| Editor source view (Markdown toggle, all non-Markdown files) | `14px` | 400 | `--gc-fg` | monospace, no rendering |
 | Monospace / code | `0.9em` of the body | 400 | `--gc-fg` | code blocks, inline code, tables |
 
 **Rules**

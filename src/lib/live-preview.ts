@@ -371,7 +371,7 @@ const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
 const HEADING_LINES = [1, 2, 3, 4, 5, 6].map((level) => `.cm-line.cm-lp-h${level}`).join(', ')
 
-const livePreviewTheme = EditorView.theme({
+export const editorTheme = EditorView.theme({
   '&': {
     flex: '1 1 auto',
     minHeight: '0',
@@ -382,6 +382,7 @@ const livePreviewTheme = EditorView.theme({
   },
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': { fontFamily: 'inherit', lineHeight: '1.7' },
+  '&.cm-lp-source .cm-scroller': { fontFamily: MONO, fontSize: '14px' },
   '.cm-content': { padding: '1rem', caretColor: 'var(--gc-fg)' },
   '@media (min-width: 640px)': {
     '.cm-content': { padding: '1.5rem' },
@@ -458,5 +459,11 @@ const livePreviewTheme = EditorView.theme({
   },
 })
 
-/** Extension bundle: the live-preview decorations and their styling. */
-export const livePreview = [livePreviewPlugin, livePreviewTheme]
+/**
+ * Renders Markdown. Leave it out to show the raw source instead (see
+ * `sourceView`). The styling in `editorTheme` is installed either way.
+ */
+export const livePreview = livePreviewPlugin
+
+/** Marks the editor as showing raw source, so the source uses a monospace font. */
+export const sourceView = EditorView.editorAttributes.of({ class: 'cm-lp-source' })
