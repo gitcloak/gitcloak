@@ -19,7 +19,7 @@ export default async function AppPage() {
   let error: string | null = null
 
   try {
-    const backend = createFileBackend(session.accessToken)
+    const backend = await createFileBackend(session.accessToken)
     repositories = await backend.listRepositories()
   } catch (err) {
     console.error('Error loading repositories:', err)

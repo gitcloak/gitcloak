@@ -46,7 +46,7 @@ export async function POST(
 
     const { path, content, sha, message } = validateSavePayload(body)
 
-    const backend = createFileBackend(session.accessToken)
+    const backend = await createFileBackend(session.accessToken)
     const result = await backend.saveFile({
       owner,
       repo,

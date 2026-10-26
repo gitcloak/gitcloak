@@ -1,14 +1,7 @@
 import NextAuth from "next-auth"
 import GitHub from "next-auth/providers/github"
 
-/**
- * `profile` is typed as the generic `Profile`; the GitHub provider's payload is
- * a `GitHubProfile`, which carries `login`.
- */
-function githubLogin(profile: unknown): string | undefined {
-  const login = (profile as { login?: unknown })?.login
-  return typeof login === "string" ? login : undefined
-}
+import { applyJwt, toClientSession } from "@/lib/auth-callbacks"
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   secret: process.env.AUTH_SECRET,
@@ -34,25 +27,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
+    // The GitHub tokens stay in the encrypted JWT cookie only; the session
+    // returned to the browser carries just the user's identity.
     async jwt({ token, account, profile }) {
-      // Store the GitHub access token and user info in the JWT
-      if (account) {
-        token.accessToken = account.access_token
-        token.refreshToken = account.refresh_token
-        token.expiresAt = account.expires_at
-
-      }
-      if (profile) {
-        token.login = githubLogin(profile)
-      }
-      return token
+      return applyJwt(token, account, profile)
     },
     async session({ session, token }) {
-      // Make the access token and GitHub login available in the session
-      session.accessToken = token.accessToken as string
-      session.user.login = token.login as string
-
-      return session
+      return toClientSession(session, token)
     },
   },
   // Auth.js debug output is verbose and can include token material; keep it

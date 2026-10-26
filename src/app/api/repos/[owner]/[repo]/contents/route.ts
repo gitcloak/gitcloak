@@ -23,7 +23,7 @@ export async function GET(
     validateOwnerRepo(owner, repo)
     const path = validatePath(searchParams.get('path') ?? '', { allowRoot: true })
 
-    const backend = createFileBackend(session.accessToken)
+    const backend = await createFileBackend(session.accessToken)
     const result = await backend.getContents(owner, repo, path)
 
     // Keep the GitHub-compatible response shape the browser code expects:

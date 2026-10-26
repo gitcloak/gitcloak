@@ -3,6 +3,20 @@ import type { NextConfig } from "next";
 const useMockBackend = process.env.FILE_BACKEND?.trim().toLowerCase() === "mock";
 const isDev = process.env.NODE_ENV !== "production";
 
+// The mock backend replaces authentication with a fixed user. Refuse to build
+// it into anything that could be deployed: never on Vercel, and for a local
+// production build only with an explicit opt-in (used to inspect headers).
+if (
+  useMockBackend &&
+  !isDev &&
+  (process.env.VERCEL || process.env.ALLOW_MOCK_BACKEND !== "1")
+) {
+  throw new Error(
+    "FILE_BACKEND=mock is only for tests. Refusing to build it for production " +
+      "(set ALLOW_MOCK_BACKEND=1 to build a local, non-deployed mock bundle)."
+  );
+}
+
 // `VERCEL_ENV` is "production" | "preview" | "development" on Vercel and unset
 // elsewhere. Preview deployments embed the Vercel toolbar (feedback/comments),
 // which loads scripts, frames, fonts and a websocket from vercel.live and

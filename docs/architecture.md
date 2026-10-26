@@ -37,8 +37,8 @@ app on.
 
 | Zone | May hold | Must never hold |
 | --- | --- | --- |
-| Browser memory (React state) | Repository/file passwords, decrypted text | Anything persisted: no `localStorage`, `sessionStorage`, IndexedDB, cookies, URLs, `console` output |
-| Server (route handlers, server components) | GitHub OAuth token (from the Auth.js session), ciphertext, repo metadata | Passwords, plaintext, decrypted content, token material in logs |
+| Browser memory (React state) | Repository/file passwords, decrypted text | Anything persisted: no `localStorage`, `sessionStorage`, IndexedDB, cookies, URLs, `console` output. The only allowed browser storage is non-sensitive UI preferences (e.g. the autosave toggle) |
+| Server (route handlers, server components) | GitHub OAuth token (read from the encrypted session cookie), ciphertext, repo metadata | Passwords, plaintext, decrypted content, token material in logs |
 | GitHub | Ciphertext, `.gitcloak`, plaintext metadata (names, messages) | Anything else |
 
 The browser is the only place plaintext exists. Treat any XSS as total
@@ -62,6 +62,9 @@ src/
     gitcloak.ts           .gitcloak create/verify, browser-side.
     validation.ts         Input validation and same-origin check for routes. Server-side.
     session.ts            getSession(): the ONLY way server code obtains the user/token.
+    access-token.ts       Decrypts the GitHub token from the session cookie (server-only).
+    auth-callbacks.ts     Auth.js jwt/session callbacks; tokens go in the JWT, never the session.
+    mock-*.ts             Test-only (session, auth handler). Loaded only behind the mock build flag.
     backends/             FileBackend interface + git (GitHub) and mock implementations.
     github.ts, github-app.ts   Legacy; unused. Do not build on them (see section 9).
   auth.ts                 Auth.js config.
@@ -95,14 +98,15 @@ Each has a test or a check. If you change code that touches one, prove it still 
 8. State-changing routes (POST/PUT/PATCH/DELETE) call `isSameOrigin()`. Use `x-forwarded-host`, as it does, so it works behind Vercel.
 9. Errors returned to clients are fixed strings (or validation messages we wrote). Log details server-side with `console.error`, never return `error.message` from Octokit or the runtime.
 10. Never log tokens, token prefixes, cookies, request bodies or file content. Auth.js `debug` stays development-only.
-11. GitHub access is through the GitHub App user-to-server token, which GitHub limits to repositories the user installed the app on. Keep the app's permissions minimal (Contents: read/write; Metadata: read). Do not request OAuth scopes or switch to a broad personal-access-token style.
-12. Test-only code (`FILE_BACKEND=mock`, `/api/test/*`, mock auth handler, `MOCK_SESSION`) must be inert in production. If you touch backend selection, make sure a production deployment cannot enter mock mode (see section 9).
+11. The GitHub access/refresh tokens exist only inside the encrypted, httpOnly Auth.js JWT cookie and in server memory. They must never appear on the object returned by `/api/auth/session` (the `session` callback in `lib/auth-callbacks.ts` copies identity only), in props passed to client components, or in any API response. Server code obtains the token through `getSession()`, which uses `readAccessToken()`. `session.ts` and the git backend import `server-only` so a client import fails the build. `tests/unit/access-token.test.ts` and `mock-auth.spec.ts` assert this.
+12. GitHub access is through the GitHub App user-to-server token, which GitHub limits to repositories the user installed the app on. Keep the app's permissions minimal (Contents: read/write; Metadata: read). Do not request OAuth scopes or switch to a broad personal-access-token style.
+13. Mock mode (`FILE_BACKEND=mock`) replaces authentication with a fixed user and must be impossible in a deployment. It is enforced three ways: (a) `next.config.ts` refuses to build it for production on Vercel, or locally without `ALLOW_MOCK_BACKEND=1`; (b) all mock code (`backends/mock`, `mock-session`, `mock-auth-handler`, `/api/test/*` bodies) is loaded with `import()` behind the build-time constant `process.env.NEXT_PUBLIC_MOCK_BACKEND === '1'`, so a normal production bundle does not contain it; (c) `getBackendKind()` throws if mock is requested in a production runtime that was not built for it, or on Vercel, so a stray env var fails closed with a 500, not an open app. Keep the literal constant in the condition (webpack can only drop the dead branch if it sees it) and never import mock modules statically.
 
 **Browser hardening**
 
-13. The CSP in `next.config.ts` is a security control. Don't add third-party script, frame or connect origins to production policy. Preview-only origins (`vercel.live`) are gated on `VERCEL_ENV === "preview"`. Never ship `'unsafe-eval'` in production.
-14. No `dangerouslySetInnerHTML`, `innerHTML`, `eval`, `new Function` or user-controlled `href`/`src` schemes. Render decrypted text as text.
-15. No new third-party scripts, analytics, fonts from CDNs or tracking pixels. Anything loaded in the page can read unlocked plaintext.
+14. The CSP in `next.config.ts` is a security control. Don't add third-party script, frame or connect origins to production policy. Preview-only origins (`vercel.live`) are gated on `VERCEL_ENV === "preview"`. Never ship `'unsafe-eval'` in production.
+15. No `dangerouslySetInnerHTML`, `innerHTML`, `eval`, `new Function` or user-controlled `href`/`src` schemes. Render decrypted text as text.
+16. No new third-party scripts, analytics, fonts from CDNs or tracking pixels. Anything loaded in the page can read unlocked plaintext.
 
 ## 5. Defence in depth: how the layers back each other up
 
@@ -112,7 +116,8 @@ Each has a test or a check. If you change code that touches one, prove it still 
 | Plaintext committed by bug or crafted request | Client always encrypts before save | `validateSavePayload` refuses non-age content server-side |
 | Path traversal / writing CI files | `validatePath` | GitHub App permissions; `.github/` denied |
 | CSRF on save | SameSite session cookie | `isSameOrigin` |
-| Token leak | Never logged, not in URLs | Short-lived GitHub App tokens; scoped to installed repos |
+| Token leak | Never logged, not in URLs, not in the browser-visible session | Short-lived GitHub App tokens (see gap 1); scoped to installed repos |
+| Mock/test bypass reaches production | Mock code not in production bundle | Build refuses mock on Vercel; runtime `getBackendKind()` throws |
 | Vulnerable dependency | `npm audit` clean, lockfile committed | Dependabot/CI audit (to be added, section 9) |
 | Offline password guessing against public ciphertext | age scrypt | Password strength guidance (to be added, section 9) |
 
@@ -132,7 +137,7 @@ The app is stateless and serverless-friendly. Keep it that way.
 
 ## 7. Deployment model (Vercel)
 
-- **Production** and **preview** run the same code path with the real GitHub backend. `FILE_BACKEND=mock` is for Playwright only and must never be set in a Vercel environment.
+- **Production** and **preview** run the same code path with the real GitHub backend. `FILE_BACKEND=mock` is for Playwright only and must never be set in a Vercel environment (the build and runtime both refuse it there).
 - Required env: `AUTH_SECRET`, `AUTH_URL` (or rely on Vercel's host trust), `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_ID`, `NEXT_PUBLIC_GITHUB_APP_NAME`. Secrets are set per Vercel environment; use a **separate GitHub App (and secrets) for preview** from production so a preview build cannot reach production installations.
 - Each preview URL must be registered as a callback on the preview GitHub App, or previews should use a stable preview alias.
 - `NEXT_PUBLIC_*` variables are public. Never put a secret in one.
@@ -143,9 +148,10 @@ The app is stateless and serverless-friendly. Keep it that way.
 
 Security-relevant PRs (auth, crypto, routes, backends, headers, deps) must answer:
 
-- [ ] Does any password, plaintext or token reach the server, a log, storage, a URL or an error message? (Must be no.)
+- [ ] Does any password or plaintext reach the server, a log, storage, a URL or an error message, or any token reach the browser? (Must be no.)
 - [ ] Is every new route/handler session-checked, origin-checked if mutating, and validated through `lib/validation.ts`?
 - [ ] Does `save` still refuse non-ciphertext and `.github/` writes? Did I add tests for new rejection cases?
+- [ ] Does new code reference mock modules only through `import()` behind `NEXT_PUBLIC_MOCK_BACKEND`?
 - [ ] Did CSP/headers change? If a new origin was added, is it preview-only or truly necessary, and why?
 - [ ] New dependency: needed, maintained, license OK, `npm audit` clean, runs only where intended (client vs server)?
 - [ ] New backend operation implemented in both `git` and `mock` backends and covered by e2e?
@@ -162,11 +168,19 @@ npm run test:e2e
 npm audit --omit=dev
 ```
 
+and check that a normal production build contains no mock code:
+
+```bash
+AUTH_SECRET=x NEXT_DIST_DIR=.next-check npm run build
+grep -rl 'mock-access-token\|demo-password' .next-check/server .next-check/static   # must print nothing
+rm -rf .next-check
+```
+
 and, for header/CSP changes, build and inspect both variants:
 
 ```bash
-FILE_BACKEND=mock AUTH_SECRET=x npm run build && npm start      # production policy
-VERCEL_ENV=preview FILE_BACKEND=mock AUTH_SECRET=x npm run build # adds vercel.live
+ALLOW_MOCK_BACKEND=1 FILE_BACKEND=mock AUTH_SECRET=x npm run build && npm start      # production policy
+VERCEL_ENV=preview ALLOW_MOCK_BACKEND=1 FILE_BACKEND=mock AUTH_SECRET=x npm run build # adds vercel.live
 curl -sI localhost:3000/ | grep -i content-security-policy
 ```
 
@@ -176,8 +190,8 @@ Load the built app in a browser and confirm there are no CSP violations in the c
 
 Do not paper over these; fix them or consciously carry them. Remove an item when it ships.
 
-1. **Mock mode in production.** Backend selection is a runtime env var that also bypasses auth. Add a hard guard (refuse `FILE_BACKEND=mock` when `NODE_ENV=production` unless an explicit test flag is set) and exclude `/api/test/*` from production builds.
-2. **Token exposed to the browser.** `session.accessToken` is returned by `/api/auth/session`. Keep it in the JWT only and read it server-side (e.g. via `getToken`), then remove it from the `session` callback.
+1. **Token refresh.** GitHub App user tokens expire (about 8 hours) and there is no refresh handling, so users are sent back through sign-in. Refresh server-side in the `jwt` callback using `refreshToken`/`expiresAt`; this also shortens the useful life of any leaked token.
+2. **Rate limiting.** There is no per-user limit on `/api/repos/**` (needs an external store, see section 6).
 3. **No password strength rules.** Ciphertext is public in public repos, so password quality is the main defence. Enforce a minimum length/zxcvbn score on "Set Repository Password" and recommend passphrases.
 4. **`.gitcloak` is unauthenticated.** A collaborator with write access can replace it. Warn when it changes (e.g. pin a fingerprint client-side) and document that write access to the repo is a trust boundary.
 5. **First-save race.** `.gitcloak` is created with no `sha`; concurrent first saves can overwrite each other, and a failed second step leaves an initialised repo with no files. Use a create-only write and handle 422 explicitly.
@@ -185,5 +199,5 @@ Do not paper over these; fix them or consciously carry them. Remove an item when
 7. **Nonce-based CSP.** `script-src` still allows `'unsafe-inline'`. Move to per-request nonces (middleware) when feasible.
 8. **CI and supply chain.** No `.github/` workflows: add lint/unit/e2e/`npm audit`, Dependabot, CodeQL, branch protection and `SECURITY.md` with a private reporting channel.
 9. **Dead code.** `lib/github.ts` and `lib/github-app.ts` are unused; delete them rather than extend them.
-10. **Pagination and rate limiting.** `listRepositories` reads only the first 100 repos; there is no per-user rate limiting on `/api/repos/**` (needs an external store, see section 6).
+10. **Pagination.** `listRepositories` reads only the first 100 repos.
 11. **Metadata leakage.** File names and commit messages are plaintext. Consider optional filename obfuscation and a generic commit message setting.
