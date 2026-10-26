@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Clock, PenLine, Save } from 'lucide-react'
 
+import { MarkdownEditor } from '@/components/markdown-editor'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { SidebarTrigger } from '@/components/ui/sidebar'
@@ -195,13 +196,7 @@ export function EditorArea({
             </div>
           </div>
         ) : selectedFile ? (
-          <textarea
-            data-testid="editor-input"
-            value={content}
-            onChange={(e) => handleContentChange(e.target.value)}
-            spellCheck={false}
-            className="min-h-0 flex-1 resize-none border-0 bg-gc-surface p-4 font-mono text-[13px] leading-relaxed text-gc-fg outline-none sm:p-6 sm:text-sm"
-          />
+          <MarkdownEditor value={content} onChange={handleContentChange} />
         ) : (
           <div
             data-testid="editor-empty"

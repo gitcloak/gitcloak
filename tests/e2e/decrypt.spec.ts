@@ -4,6 +4,7 @@ import {
   gotoApp,
   clickFileNode,
   expectEditor,
+  expectEditorValue,
   submitPassword,
 } from './helpers'
 
@@ -20,9 +21,7 @@ test.describe('File decryption', () => {
     await submitPassword(page, 'unlock', 'demo-password')
 
     await expectEditor(page, 'welcome.md.age', /Welcome/)
-    await expect(page.getByTestId('editor-input')).toHaveValue(
-      /encrypted with the repository password/
-    )
+    await expectEditorValue(page, /encrypted with the repository password/)
     await expect(page.getByTestId('repo-lock-status')).toHaveAttribute(
       'data-repo-status',
       'unlocked'

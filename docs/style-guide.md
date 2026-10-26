@@ -98,8 +98,10 @@ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 ## 3. Typography
 
 Default UI font is Tailwind's sans stack (`ui-sans-serif, system-ui, …`).
-Code and the editor use a monospace stack:
-`Monaco, Menlo, "Ubuntu Mono", monospace`.
+Code blocks and inline code use a monospace stack:
+`Monaco, Menlo, "Ubuntu Mono", monospace`. The editor itself renders Markdown
+live (see `markdown-editor.tsx`), so its prose uses the default sans stack and
+only code is monospace.
 
 | Role | Size | Weight | Color | Notes |
 | --- | --- | --- | --- | --- |
@@ -109,7 +111,8 @@ Code and the editor use a monospace stack:
 | Secondary / description | `0.875rem` | 400 | `--gc-fg-muted` | `leading-relaxed` |
 | Section label (uppercase) | `0.75rem` (12px) | 600 | `--gc-fg-muted` | `uppercase`, `tracking-wide` |
 | Micro / badge | `0.6875rem`–`0.75rem` | 600 | contextual | pills, status |
-| Monospace / editor | `14px` | 400 | `--gc-fg` | `line-height: 1.6` |
+| Editor body (live Markdown) | `15px` | 400 | `--gc-fg` | `line-height: 1.7`; headings scale from it |
+| Monospace / code | `0.9em` of the body | 400 | `--gc-fg` | code blocks, inline code, tables |
 
 **Rules**
 
@@ -329,7 +332,7 @@ Rules
 
 - The shell is exactly viewport height: `h-svh` on the provider and
   `overflow-hidden` on the inset, with the scroll living in the pane that owns
-  the content (file tree, editor textarea). Never let the page itself scroll.
+  the content (file tree, editor). Never let the page itself scroll.
 - `SidebarTrigger` lives in the **editor header**, so it is present on every
   viewport — that is the only route to the file tree on mobile.
 - Give every header/footer row `flex-wrap` and hide secondary labels with
