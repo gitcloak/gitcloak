@@ -11,6 +11,9 @@ import { NoticeToast, type Notice } from '@/components/notice-toast'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { SidebarInset } from '@/components/ui/sidebar'
 import { useAutosave } from '@/hooks/use-autosave'
+import { useDisplayPath } from '@/hooks/use-display-path'
+import { encryptRepoPath, validateFilePath, type FilenameKey } from '@/lib/filenames'
+import type { NameMigration } from '@/lib/name-migration'
 
 interface Repository {
   id: number
@@ -45,6 +48,22 @@ interface ClientPageProps {
   userName: string
   userImage?: string
   userEmail?: string
+}
+
+/** Notice text for a finished name migration, or for one that failed (null). */
+function migrationSummary(migration: NameMigration | null): string {
+  if (!migration) {
+    return ' Could not encrypt file names. Unlock again to retry.'
+  }
+  const renamed = Object.keys(migration.renamed).length
+  let summary = ''
+  if (renamed > 0) {
+    summary += ` Encrypted ${renamed} ${renamed === 1 ? 'file name' : 'file names'}.`
+  }
+  if (migration.failed > 0) {
+    summary += ` ${migration.failed} ${migration.failed === 1 ? 'file' : 'files'} could not be renamed yet and will be retried.`
+  }
+  return summary
 }
 
 /**
@@ -91,6 +110,9 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   )
   // Store the repository password in memory (per repository)
   const [repoPasswords, setRepoPasswords] = useState<Record<string, string>>({})
+  // File-name keys opened with the repository passwords. null means the
+  // repository predates encrypted names, so its names are kept as stored.
+  const [filenameKeys, setFilenameKeys] = useState<Record<string, FilenameKey | null>>({})
   // Per-file password overrides used when a file is encrypted with a password
   // different from the repository password.
   const [filePasswords, setFilePasswords] = useState<Record<string, string>>({})
@@ -109,6 +131,17 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   const [autosave, setAutosave] = useAutosave()
 
   const repoKey = selectedRepo ? `${selectedRepo.owner}/${selectedRepo.name}` : null
+  // A repository's name key exists only while its password is in memory.
+  const keyFor = (owner: string, repo: string): FilenameKey | null => {
+    const key = `${owner}/${repo}`
+    return repoPasswords[key] ? (filenameKeys[key] ?? null) : null
+  }
+  const filenameKey = selectedRepo ? keyFor(selectedRepo.owner, selectedRepo.name) : null
+  const selectedFileKey = selectedFile ? keyFor(selectedFile.owner, selectedFile.repo) : null
+  const selectedDisplayPath = useDisplayPath(
+    selectedFile && !selectedFile.isNew ? selectedFile.path : undefined,
+    selectedFileKey
+  )
   // Autosave may only save when the file's repository password is already in
   // memory, so it never opens a password dialog while the user is typing.
   const canAutosave = selectedFile
@@ -157,6 +190,47 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         : repoInitialized[repoKey] === true
           ? 'locked'
           : 'checking'
+
+  /**
+   * Right after a password checks out, bring the repository to encrypted file
+   * names: add a name key to old `.gitcloak` files and rename plain `.age`
+   * files. The open file and the tree follow the renames. Returns null when
+   * that failed, after showing the error; the repository still unlocks.
+   */
+  async function migrateNames(
+    owner: string,
+    repo: string,
+    gitcloak: { content: string; sha?: string },
+    password: string
+  ): Promise<NameMigration | null> {
+    const { migrateRepositoryNames } = await import('@/lib/name-migration')
+    setLoadingMessage('Encrypting file names...')
+    setIsLoading(true)
+    try {
+      const migration = await migrateRepositoryNames(
+        owner,
+        repo,
+        { content: gitcloak.content, sha: gitcloak.sha ?? '' },
+        password
+      )
+      const renamed = migration.renamed
+      if (Object.keys(renamed).length > 0) {
+        setSelectedFile(current => {
+          const target = current && current.owner === owner && current.repo === repo
+            ? renamed[current.path]
+            : undefined
+          return target ? { ...current!, path: target.path, sha: target.sha } : current
+        })
+        window.__fileTreeRefresh?.()
+      }
+      return migration
+    } catch (error) {
+      console.error('Error encrypting file names:', error)
+      return null
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   /**
    * Ask for an alternative password when a file cannot be decrypted with the
@@ -257,9 +331,15 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
               throw new Error('Incorrect password. Please try again.')
             }
             setRepoPasswords(prev => ({ ...prev, [key]: password }))
-            showNotice('success', `${key} is now unlocked.`)
+            const migration = await migrateNames(owner, repo, { content: check.content!, sha: check.sha }, password)
+            setFilenameKeys(prev => ({ ...prev, [key]: migration?.key ?? null }))
+            showNotice(
+              migration && !migration.failed ? 'success' : 'error',
+              `${key} is now unlocked.${migrationSummary(migration)}`
+            )
             if (resumeFile) {
-              void loadFile(resumeFile, password)
+              const renamedTo = migration?.renamed[resumeFile.path]?.path
+              void loadFile(renamedTo ? { ...resumeFile, path: renamedTo } : resumeFile, password)
             }
           },
         })
@@ -367,6 +447,11 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
       delete updated[key]
       return updated
     })
+    setFilenameKeys(prev => {
+      const updated = { ...prev }
+      delete updated[key]
+      return updated
+    })
     // Remove per-file passwords that belong to this repository as well.
     setFilePasswords(prev => {
       const updated: Record<string, string> = {}
@@ -392,6 +477,12 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   const handleFileNameSubmit = (fileName: string) => {
     if (!selectedRepo) return
 
+    const problem = validateFilePath(fileName)
+    if (problem) {
+      showNotice('error', problem)
+      return
+    }
+
     // Create new file in memory
     setSelectedFile({
       path: fileName,
@@ -407,16 +498,21 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   const handleSaveFile = async (content: string) => {
     if (!selectedFile) return
 
-    const performSave = async (password: string) => {
+    const performSave = async (password: string, nameKey: FilenameKey | null) => {
       const { encryptWithPassword } = await import('@/lib/encryption')
 
       // Encrypt the content
       const encryptedContent = await encryptWithPassword(content, password)
 
-      // Determine the save path (add .age extension)
-      const savePath = selectedFile.path.endsWith('.age')
-        ? selectedFile.path
-        : `${selectedFile.path}.age`
+      // A new file's name is encrypted when the repository has a name key (see
+      // `openFilenameKey`). An opened file keeps the stored path it was loaded from.
+      const savePath = selectedFile.isNew
+        ? nameKey
+          ? await encryptRepoPath(selectedFile.path, nameKey)
+          : `${selectedFile.path}.age`
+        : selectedFile.path.endsWith('.age')
+          ? selectedFile.path
+          : `${selectedFile.path}.age`
 
       // Save to GitHub
       const response = await fetch(
@@ -460,13 +556,14 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           : current
       )
 
-      showNotice('success', `Saved ${savePath}`)
+      const shownPath = selectedFile.isNew ? selectedFile.path : (selectedDisplayPath ?? savePath)
+      showNotice('success', `Saved ${shownPath}`)
       // Refresh the file tree so newly created files show up immediately.
       window.__fileTreeRefresh?.()
     }
 
     try {
-      const { checkGitCloakExists, createGitCloakFile, verifyPassword } = await import('@/lib/gitcloak')
+      const { checkGitCloakExists, createGitCloakFile, openFilenameKey, verifyPassword } = await import('@/lib/gitcloak')
       const repoKeyForFile = `${selectedFile.owner}/${selectedFile.repo}`
       const gitcloakCheck = await checkGitCloakExists(selectedFile.owner, selectedFile.repo)
 
@@ -483,6 +580,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           onSubmit: async (newPassword: string) => {
             // Create .gitcloak file
             const gitcloakContent = await createGitCloakFile(newPassword)
+            const nameKey = await openFilenameKey(gitcloakContent, newPassword)
 
             // Save .gitcloak file first
             const gitcloakResponse = await fetch(
@@ -506,15 +604,17 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
 
             // Store password in memory
             setRepoPasswords(prev => ({ ...prev, [repoKeyForFile]: newPassword }))
+            setFilenameKeys(prev => ({ ...prev, [repoKeyForFile]: nameKey }))
             setRepoInitialized(prev => ({ ...prev, [repoKeyForFile]: true }))
 
             // Perform the save
-            await performSave(newPassword)
+            await performSave(newPassword, nameKey)
           },
         })
       } else if (repoPasswords[repoKeyForFile]) {
         // Have password in memory
-        await performSave(repoPasswords[repoKeyForFile])
+        // The name key was opened when the password was entered.
+        await performSave(repoPasswords[repoKeyForFile], filenameKeys[repoKeyForFile] ?? null)
       } else {
         // Need to ask for password
         setPasswordDialog({
@@ -532,11 +632,27 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
               throw new Error('Incorrect password!')
             }
 
-            // Store password in memory
+            // Store password in memory, then bring the names up to date. Saving
+            // a new file needs the name key, so stop if that cannot be set up.
             setRepoPasswords(prev => ({ ...prev, [repoKeyForFile]: enteredPassword }))
+            const migration = await migrateNames(
+              selectedFile.owner,
+              selectedFile.repo,
+              { content: gitcloakCheck.content!, sha: gitcloakCheck.sha },
+              enteredPassword
+            )
+            if (!migration) {
+              setRepoPasswords(prev => {
+                const updated = { ...prev }
+                delete updated[repoKeyForFile]
+                return updated
+              })
+              throw new Error('Could not set up encrypted file names. Try again.')
+            }
+            setFilenameKeys(prev => ({ ...prev, [repoKeyForFile]: migration.key }))
 
             // Perform the save
-            await performSave(enteredPassword)
+            await performSave(enteredPassword, migration.key)
           },
         })
       }
@@ -586,6 +702,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         onLockRepo={handleLockRepo}
         onOpenSettings={() => setSettingsOpen(true)}
         repoStatus={repoStatus}
+        filenameKey={filenameKey}
         selectedFilePath={selectedFile?.path}
       />
       <SettingsDialog
@@ -598,6 +715,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         <EditorArea
           key={selectedFile?.openId ?? 'none'}
           selectedFile={selectedFile}
+          displayPath={selectedDisplayPath}
           isLoading={isLoading}
           autosave={autosave}
           canAutosave={canAutosave}

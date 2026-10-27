@@ -86,9 +86,15 @@ function validateGitCloakContent(content: string): void {
   } catch {
     throw new ValidationError('.gitcloak must be valid JSON')
   }
-  const verification = (parsed as { verification?: unknown })?.verification
+  const { verification, nameKey } = (parsed ?? {}) as {
+    verification?: unknown
+    nameKey?: unknown
+  }
   if (typeof verification !== 'string' || !verification.startsWith(AGE_ARMOR_HEADER)) {
     throw new ValidationError('.gitcloak must contain an age-encrypted verification')
+  }
+  if (nameKey !== undefined && (typeof nameKey !== 'string' || !nameKey.startsWith(AGE_ARMOR_HEADER))) {
+    throw new ValidationError('.gitcloak name key must be age-encrypted')
   }
 }
 
@@ -138,6 +144,47 @@ export function validateSavePayload(body: unknown): SavePayload {
   }
 
   return { path: validPath, content, message: validMessage, sha: validSha }
+}
+
+export interface MovePayload {
+  from: string
+  to: string
+  fromSha: string
+}
+
+/**
+ * Validate a rename of an encrypted file. Only `.age` files may be moved, and
+ * the target must pass the same rules as a save.
+ */
+export function validateMovePayload(body: unknown): MovePayload {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new ValidationError('Invalid request body')
+  }
+  const { from, to, fromSha } = body as Record<string, unknown>
+
+  const validFrom = validatePath(from)
+  if (!validFrom.endsWith('.age') || validFrom === GITCLOAK_FILE) {
+    throw new ValidationError('Only .age files can be renamed')
+  }
+  if (validFrom.split('/')[0].toLowerCase() === '.github') {
+    throw new ValidationError('Writing to .github is not allowed')
+  }
+
+  const validTo = validatePath(to)
+  // .gitcloak is writable through save, but a rename must never replace it.
+  if (!validTo.endsWith('.age')) {
+    throw new ValidationError('Only .age files can be renamed')
+  }
+  validateWritablePath(validTo)
+  if (validTo === validFrom) {
+    throw new ValidationError('The new name must differ from the old one')
+  }
+
+  if (typeof fromSha !== 'string' || !SHA_PATTERN.test(fromSha)) {
+    throw new ValidationError('Invalid sha')
+  }
+
+  return { from: validFrom, to: validTo, fromSha }
 }
 
 /**

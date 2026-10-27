@@ -58,23 +58,26 @@ test.describe('Creating and saving files', () => {
     await page.getByTestId('set-password-submit').click()
 
     await expect(page.getByTestId('notice')).toHaveAttribute('data-notice-type', 'success')
-    await expect(page.getByTestId('notice')).toContainText('Saved hello.md.age')
-    await expect(page.getByTestId('selected-file-path')).toHaveText('hello.md.age')
+    await expect(page.getByTestId('notice')).toContainText('Saved hello.md')
+    await expect(page.getByTestId('selected-file-path')).toHaveText('hello.md')
     await expect(page.getByTestId('repo-lock-status')).toHaveAttribute(
       'data-repo-status',
       'unlocked'
     )
     // The file tree refreshed and now shows the encrypted file.
     await expect(
-      page.locator('[data-testid="file-node"][data-path="hello.md.age"]')
+      page.locator('[data-testid="file-node"][data-name="hello.md"]')
     ).toBeVisible()
 
-    // At rest the content must be age-encrypted and `.gitcloak` must exist.
+    // At rest the name is encrypted, the content is age-encrypted and
+    // `.gitcloak` must exist.
     const state = await fetchMockState(request)
-    expect(state['mockuser/scratch']['.gitcloak']).toContain('"verification"')
-    expect(state['mockuser/scratch']['hello.md.age']).toContain(
-      '-----BEGIN AGE ENCRYPTED FILE-----'
-    )
+    const files = state['mockuser/scratch']
+    expect(files['.gitcloak']).toContain('"verification"')
+    expect(files['hello.md.age']).toBeUndefined()
+    const [storedPath] = Object.keys(files).filter((path) => path.endsWith('.age'))
+    expect(storedPath).not.toContain('hello')
+    expect(files[storedPath]).toContain('-----BEGIN AGE ENCRYPTED FILE-----')
   })
 
   test('prompts for the existing repository password when saving into a locked repository', async ({
@@ -108,16 +111,18 @@ test.describe('Creating and saving files', () => {
     await page.getByTestId('save-password-input').fill('demo-password')
     await page.getByTestId('save-password-submit').click()
 
-    await expect(page.getByTestId('notice')).toContainText('Saved draft.md.age')
+    await expect(page.getByTestId('notice')).toContainText('Saved draft.md')
     await expect(page.getByTestId('repo-lock-status')).toHaveAttribute(
       'data-repo-status',
       'unlocked'
     )
 
     const state = await fetchMockState(request)
-    expect(state['mockuser/demo-notes']['draft.md.age']).toContain(
-      '-----BEGIN AGE ENCRYPTED FILE-----'
-    )
+    const files = state['mockuser/demo-notes']
+    expect(files['draft.md.age']).toBeUndefined()
+    expect(Object.keys(files).some((path) => path.includes('draft'))).toBe(false)
+    const storedPaths = Object.keys(files).filter((path) => path.endsWith('.age'))
+    expect(storedPaths.some((path) => files[path].includes('-----BEGIN AGE ENCRYPTED FILE-----'))).toBe(true)
   })
 
   test('save stays disabled until the editor content changes', async ({ page }) => {

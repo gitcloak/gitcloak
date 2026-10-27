@@ -71,6 +71,59 @@ test.describe('Backend API contract', () => {
     expect(state['mockuser/scratch']['notes.md']).toContain('Scratch')
   })
 
+  test('moving a file keeps its bytes, refuses stale or clashing moves', async ({ request }) => {
+    const repo = 'mockuser/legacy-notes'
+    const before = await fetchMockState(request)
+    const original = before[repo]['welcome.md.age']
+    const listing = await request.get(`/api/repos/${repo}/contents?path=`)
+    const sha = (await listing.json()).find(
+      (entry: { path: string }) => entry.path === 'welcome.md.age'
+    ).sha
+
+    const move = await request.post(`/api/repos/${repo}/move`, {
+      data: { from: 'welcome.md.age', to: 'moved.age', fromSha: sha },
+    })
+    expect(move.status()).toBe(200)
+
+    let state = await fetchMockState(request)
+    expect(state[repo]['welcome.md.age']).toBeUndefined()
+    expect(state[repo]['moved.age']).toBe(original)
+
+    // The old path is gone, so the same move is now a 404.
+    const again = await request.post(`/api/repos/${repo}/move`, {
+      data: { from: 'welcome.md.age', to: 'moved.age', fromSha: sha },
+    })
+    expect(again.status()).toBe(404)
+
+    // A different file already at the target blocks the move and is left alone.
+    const ideasSha = (await (await request.get(`/api/repos/${repo}/contents?path=`)).json()).find(
+      (entry: { path: string }) => entry.path === 'ideas.md.age'
+    ).sha
+    const clash = await request.post(`/api/repos/${repo}/move`, {
+      data: { from: 'ideas.md.age', to: 'moved.age', fromSha: ideasSha },
+    })
+    expect(clash.status()).toBe(409)
+    state = await fetchMockState(request)
+    expect(state[repo]['ideas.md.age']).toBeDefined()
+  })
+
+  test('move refuses plain files, .gitcloak and the same path', async ({ request }) => {
+    const plain = await request.post('/api/repos/mockuser/demo-notes/move', {
+      data: { from: 'README.md', to: 'x.age', fromSha: 'a'.repeat(40) },
+    })
+    expect(plain.status()).toBe(400)
+
+    const gitcloak = await request.post('/api/repos/mockuser/demo-notes/move', {
+      data: { from: '.gitcloak', to: 'x.age', fromSha: 'a'.repeat(40) },
+    })
+    expect(gitcloak.status()).toBe(400)
+
+    const same = await request.post('/api/repos/mockuser/demo-notes/move', {
+      data: { from: 'welcome.md.age', to: 'welcome.md.age', fromSha: 'a'.repeat(40) },
+    })
+    expect(same.status()).toBe(400)
+  })
+
   test('save rejects plaintext, non-.age paths and workflow paths', async ({ request }) => {
     const armor = '-----BEGIN AGE ENCRYPTED FILE-----\nfake\n-----END AGE ENCRYPTED FILE-----'
     const bad = [
