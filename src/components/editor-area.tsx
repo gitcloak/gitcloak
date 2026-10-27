@@ -28,6 +28,8 @@ interface SelectedFile {
 
 interface EditorAreaProps {
   selectedFile: SelectedFile | null
+  /** Plain path to show for the open file; the stored path is shown when absent. */
+  displayPath?: string
   isLoading: boolean
   /** Save automatically after the user stops typing. */
   autosave: boolean
@@ -41,6 +43,7 @@ interface EditorAreaProps {
 
 export function EditorArea({
   selectedFile,
+  displayPath,
   isLoading,
   autosave,
   canAutosave,
@@ -68,7 +71,8 @@ export function EditorArea({
   // opened file because this component is keyed by `openId`. Other files are
   // always shown as source, since rendering would misread e.g. `# comments`.
   const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered')
-  const isMarkdown = Boolean(selectedFile && MARKDOWN_FILE.test(selectedFile.path))
+  // Decide by the plain name: stored names of encrypted files end in `.age` only.
+  const isMarkdown = Boolean(selectedFile && MARKDOWN_FILE.test(displayPath ?? selectedFile.path))
   const rendered = isMarkdown && viewMode === 'rendered'
 
   const handleContentChange = (newContent: string) => {
@@ -158,7 +162,7 @@ export function EditorArea({
             {selectedFile ? (
               <>
                 <span data-testid="selected-file-path" className="truncate">
-                  {selectedFile.path}
+                  {displayPath ?? selectedFile.path}
                 </span>
                 {selectedFile.isNew && (
                   <span className="shrink-0 rounded-gc-sm bg-gc-success-bg px-2 py-0.5 text-xs font-medium text-gc-success-fg">
