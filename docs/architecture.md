@@ -21,10 +21,12 @@ The promise to users, which every change must preserve:
 
 > The server and GitHub never see a password or plaintext file content.
 
-What is **not** protected (state this honestly in docs and UI, never claim
-"zero knowledge"): file names, directory structure, file sizes, commit
-messages, commit timing, and the set of repositories the user installed the
-app on.
+File and folder names are encrypted too (invariant 17). What is **not**
+protected (state this honestly in docs and UI, never claim "zero knowledge"):
+the number of entries and the depth of the directory tree, file sizes, commit
+messages (they contain the stored names), commit timing, names of entries
+created before encrypted names, and the set of repositories the user installed
+the app on.
 
 ## 2. Trust boundaries
 
@@ -39,7 +41,7 @@ app on.
 | --- | --- | --- |
 | Browser memory (React state) | Repository/file passwords, decrypted text | Anything persisted: no `localStorage`, `sessionStorage`, IndexedDB, cookies, URLs, `console` output. The only allowed browser storage is non-sensitive UI preferences (e.g. the autosave toggle) |
 | Server (route handlers, server components) | GitHub OAuth token (read from the encrypted session cookie), ciphertext, repo metadata | Passwords, plaintext, decrypted content, token material in logs |
-| GitHub | Ciphertext, `.gitcloak`, plaintext metadata (names, messages) | Anything else |
+| GitHub | Ciphertext, `.gitcloak`, stored names (encrypted for new entries), commit messages | Plain names of new entries, anything else |
 
 The browser is the only place plaintext exists. Treat any XSS as total
 compromise of unlocked repositories; the defences in section 5 exist for that
@@ -50,7 +52,7 @@ reason.
 ```
 src/
   app/                    Routes only. Thin: auth check -> validate -> call backend -> shape response.
-    api/repos/[owner]/[repo]/{contents,save}/route.ts   The only data API.
+    api/repos/[owner]/[repo]/{contents,save,move}/route.ts   The only data API.
     api/auth/[...nextauth]/                              Auth.js handlers (+ mock shim for e2e).
     api/setup/                                           GitHub App post-install redirect.
     api/test/*                                           Mock-only; 404 unless FILE_BACKEND=mock.
@@ -60,6 +62,8 @@ src/
   lib/
     encryption.ts         age wrapper. Browser-side. The ONLY file that imports age-encryption.
     gitcloak.ts           .gitcloak create/verify, browser-side.
+    filenames.ts          Encrypted file and folder names, browser-side. Keys come from a secret wrapped in .gitcloak.
+    name-migration.ts     Upgrades old repositories to encrypted names on unlock (browser-side).
     validation.ts         Input validation and same-origin check for routes. Server-side.
     session.ts            getSession(): the ONLY way server code obtains the user/token.
     access-token.ts       Decrypts the GitHub token from the session cookie (server-only).
@@ -74,7 +78,7 @@ tests/unit, tests/e2e     Vitest and Playwright (mock backend, no network).
 
 Dependency direction (enforce in review):
 
-- `components/` -> `lib/encryption`, `lib/gitcloak`, our own `/api`. Never `lib/backends`, `auth.ts` or Octokit.
+- `components/` -> `lib/encryption`, `lib/gitcloak`, `lib/filenames`, our own `/api`. Never `lib/backends`, `auth.ts` or Octokit.
 - `app/api/**` -> `lib/session`, `lib/validation`, `lib/backends`. Never `lib/encryption` (the server must not be able to decrypt) and never `age-encryption`.
 - `lib/backends/*` know nothing about React, Auth.js or HTTP shapes. They take a token and return normalized data.
 - Server-only modules must not be imported into client components. Add `import "server-only"` to new server-only modules.
@@ -85,16 +89,16 @@ Each has a test or a check. If you change code that touches one, prove it still 
 
 **Crypto and secrets**
 
-1. `age-encryption` is imported only in `lib/encryption.ts`; `lib/encryption` and `lib/gitcloak` are imported only from client code (and the mock backend's seed data). No server route may decrypt or accept a password.
+1. `age-encryption` is imported only in `lib/encryption.ts`; `lib/encryption`, `lib/gitcloak` and `lib/filenames` are imported only from client code (and the mock backend's seed data). No server route may decrypt or accept a password.
 2. Passwords and plaintext live only in React state and are cleared on lock (`handleLockRepo`). Never write them to storage, URLs, logs, error messages, analytics or `data-*` attributes.
 3. Passwords are never sent over the network. Request bodies to `/api/repos/**/save` carry ciphertext only.
-4. Crypto stays in age passphrase mode; do not hand-roll primitives, change the armor format, or add a "remember password" feature without a design review. Changes to the scrypt work factor or `.gitcloak` format need a version bump and a migration path for existing repositories.
+4. Crypto stays in age passphrase mode; do not hand-roll primitives, change the armor format, or add a "remember password" feature without a design review. Changes to the scrypt work factor or `.gitcloak` format need a version bump and a migration path for existing repositories. **Exception: file names** (`lib/filenames.ts`). age cannot encrypt a name deterministically, so names use an SIV-style construction over WebCrypto (HMAC-SHA256 as the synthetic IV, AES-CTR, keys from HKDF-SHA256). The keys come from a random 32-byte secret stored in `.gitcloak` (version 1.1) as `nameKey`, wrapped with age under the repository password. Names are therefore as hard to guess as the contents: never derive name keys directly from the password, because public names would then give a fast offline check. The construction is new and has not had an independent review; get one before relying on it for anything beyond name hiding.
 
 **Server and API**
 
 5. Every route handler calls `getSession()` first and returns 401 without a token. Server components under `(authenticated)` do the same. There is no unauthenticated data path. Do not add `middleware.ts`-only protection; check in the handler.
 6. All request input (path params, query, body) goes through `lib/validation.ts` before use. Add a validator when you add a field; never pass raw input to Octokit.
-7. `save` accepts only age ciphertext (`.age`) or a well-formed `.gitcloak`, never writes under `.github/`, and rejects traversal paths. Do not loosen this to "support" another file type; encrypt on the client instead.
+7. `save` accepts only age ciphertext (`.age`) or a well-formed `.gitcloak`, never writes under `.github/`, and rejects traversal paths. Do not loosen this to "support" another file type; encrypt on the client instead. `move` renames only `.age` files to `.age` paths and copies the bytes unchanged; it never touches `.gitcloak`.
 8. State-changing routes (POST/PUT/PATCH/DELETE) call `isSameOrigin()`. Use `x-forwarded-host`, as it does, so it works behind Vercel.
 9. Errors returned to clients are fixed strings (or validation messages we wrote). Log details server-side with `console.error`, never return `error.message` from Octokit or the runtime.
 10. Never log tokens, token prefixes, cookies, request bodies or file content. Auth.js `debug` stays development-only.
@@ -107,6 +111,10 @@ Each has a test or a check. If you change code that touches one, prove it still 
 14. The CSP in `next.config.ts` is a security control. Don't add third-party script, frame or connect origins to production policy. Preview-only origins (`vercel.live`) are gated on `VERCEL_ENV === "preview"`. Never ship `'unsafe-eval'` in production.
 15. No `dangerouslySetInnerHTML`, `innerHTML`, `eval`, `new Function` or user-controlled `href`/`src` schemes. Render decrypted text as text.
 16. No new third-party scripts, analytics, fonts from CDNs or tracking pixels. Anything loaded in the page can read unlocked plaintext.
+
+**File names**
+
+17. Plain names of new entries never leave the browser. `encryptRepoPath` in `lib/filenames.ts` produces stored names for new entries, and `name-migration.ts` produces them for old ones. The server validates and stores the stored name it is given (still `.age` for files), and the commit message shows the stored name. Tests: `tests/unit/filenames.test.ts`, `tests/e2e/encrypted-names.spec.ts` and `tests/e2e/name-migration.spec.ts`.
 
 ## 5. Defence in depth: how the layers back each other up
 
@@ -132,7 +140,7 @@ The app is stateless and serverless-friendly. Keep it that way.
 - **Large content.** Request bodies are capped (`MAX_BODY_BYTES`). Encrypt-on-client for big files blocks the main thread; keep using `yieldToMain`, move to a Web Worker before supporting large files, and stream rather than buffer if limits are raised.
 - **Client state.** `client-page.tsx` is already large. New features should extract hooks/components (e.g. `useRepoPasswords`) rather than grow it; keep secrets in one well-defined store that `lock` can clear in one call.
 - **Config.** All env access is read in one place per concern (`auth.ts`, `backends/index.ts`, `next.config.ts`). Fail fast on missing required config at startup rather than at first request. Document every variable in `.env.example`.
-- **Versioned formats.** Anything persisted in a user's repo (`.gitcloak`, file headers, naming conventions) carries a version and must stay readable by older and newer clients. Prefer additive changes.
+- **Versioned formats.** Anything persisted in a user's repo (`.gitcloak`, file headers, naming conventions) carries a version and must stay readable by older and newer clients. Prefer additive changes. `.gitcloak` version 1.1 added `nameKey` (additive: 1.0 clients ignore it). Encrypted names (`lib/filenames.ts`) have no version marker of their own: the HKDF labels (`gitcloak-filename-mac-v1`, `gitcloak-filename-enc-v1`), the SIV construction and the 16-byte tag are fixed for every repository. Changing any of them makes existing names unreadable (they then show as stored, and nothing is lost), so add a marker and a migration first. A version 1.0 `.gitcloak` is upgraded to 1.1 on the first unlock (`name-migration.ts`).
 - **Interop.** Files must remain decryptable with the stock `age` CLI. Don't add custom wrappers around the ciphertext.
 
 ## 7. Deployment model (Vercel)
@@ -200,4 +208,4 @@ Do not paper over these; fix them or consciously carry them. Remove an item when
 8. **CI gaps.** CI (lint, unit, build, e2e), Dependabot, CodeQL and `SECURITY.md` exist. Still missing: an `npm audit --omit=dev` step and the "no mock code in the production bundle" grep from section 8 in CI.
 9. **Dead code.** `lib/github.ts` and `lib/github-app.ts` are unused; delete them rather than extend them.
 10. **Pagination.** `listRepositories` reads only the first 100 repos.
-11. **Metadata leakage.** File names and commit messages are plaintext. Consider optional filename obfuscation and a generic commit message setting.
+11. **Metadata leakage.** File names are encrypted (invariant 17), and `.age` files saved before that are renamed on unlock. Still visible: folder names and plain (non-`.age`) files, because renaming a folder moves everything inside it, code included, so that needs its own design. Also visible: commit messages (they contain the stored names; consider a generic message setting), entry counts, tree depth, and sizes.

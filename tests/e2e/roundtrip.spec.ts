@@ -12,7 +12,6 @@ import {
 
 const REPO = 'mockuser/scratch'
 const FILE = 'roundtrip.md'
-const ENCRYPTED_FILE = `${FILE}.age`
 const PASSWORD = 'roundtrip-pass'
 const MARKER = 'PLAINTEXT_MARKER_7f3a9c'
 const PLAINTEXT = `# Round trip\n\n${MARKER}\n`
@@ -38,8 +37,8 @@ test.describe('Encryption round trip', () => {
     await page.getByTestId('set-password-confirm-input').fill(PASSWORD)
     await page.getByTestId('set-password-submit').click()
 
-    await expect(page.getByTestId('notice')).toContainText(`Saved ${ENCRYPTED_FILE}`)
-    await expect(page.getByTestId('selected-file-path')).toHaveText(ENCRYPTED_FILE)
+    await expect(page.getByTestId('notice')).toContainText(`Saved ${FILE}`)
+    await expect(page.getByTestId('selected-file-path')).toHaveText(FILE)
     await expect(page.getByTestId('repo-lock-status')).toHaveAttribute(
       'data-repo-status',
       'unlocked'
@@ -47,8 +46,10 @@ test.describe('Encryption round trip', () => {
 
     // ...and the age-encrypted bytes at rest must never contain the plaintext.
     const state = await fetchMockState(request)
-    const stored = state[REPO][ENCRYPTED_FILE]
-    expect(stored).toBeDefined()
+    const storedPath = Object.keys(state[REPO]).find((path) => path.endsWith('.age'))
+    expect(storedPath).toBeDefined()
+    expect(storedPath).not.toContain('roundtrip')
+    const stored = state[REPO][storedPath!]
     expect(stored).toContain('-----BEGIN AGE ENCRYPTED FILE-----')
     expect(stored).not.toContain(MARKER)
     expect(stored).not.toContain('# Round trip')
@@ -69,11 +70,11 @@ test.describe('Encryption round trip', () => {
 
     // Re-open the file: it is downloaded from the backend and decrypted with
     // the password we set, round-tripping back to the exact original content.
-    await clickFileNode(page, ENCRYPTED_FILE)
+    await clickFileNode(page, storedPath!)
     await expect(page.getByTestId('unlock-title')).toBeVisible()
     await submitPassword(page, 'unlock', PASSWORD)
 
-    await expectEditor(page, ENCRYPTED_FILE, PLAINTEXT)
+    await expectEditor(page, FILE, PLAINTEXT)
     await expect(page.getByTestId('repo-lock-status')).toHaveAttribute(
       'data-repo-status',
       'unlocked'
