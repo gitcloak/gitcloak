@@ -6,6 +6,7 @@ import {
   fetchMockState,
   fillEditor,
   expectEditorValue,
+  rootNewFileButton,
 } from './helpers'
 
 test.describe('Creating and saving files', () => {
@@ -17,7 +18,7 @@ test.describe('Creating and saving files', () => {
     await selectRepo(page, 'mockuser/scratch')
 
     // Open the "new file" dialog.
-    await page.getByTestId('new-file-button').click()
+    await rootNewFileButton(page).click()
     await expect(page.getByTestId('new-file-dialog')).toBeVisible()
     await expect(page.getByTestId('new-file-title')).toHaveText('Create New File')
     await page.getByTestId('new-file-input').fill('hello.md')
@@ -89,7 +90,7 @@ test.describe('Creating and saving files', () => {
     // demo-notes is locked and already initialized.
     await expect(page.getByTestId('repo-lock-status')).toContainText('Locked')
 
-    await page.getByTestId('new-file-button').click()
+    await rootNewFileButton(page).click()
     await page.getByTestId('new-file-input').fill('draft.md')
     await page.getByTestId('new-file-submit').click()
     await fillEditor(page, '# Draft\n')
@@ -128,7 +129,7 @@ test.describe('Creating and saving files', () => {
   test('save stays disabled until the editor content changes', async ({ page }) => {
     await gotoApp(page)
 
-    await page.getByTestId('new-file-button').click()
+    await rootNewFileButton(page).click()
     await page.getByTestId('new-file-input').fill('untouched.md')
     await page.getByTestId('new-file-submit').click()
 

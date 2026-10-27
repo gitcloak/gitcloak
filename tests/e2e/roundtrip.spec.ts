@@ -8,6 +8,7 @@ import {
   submitPassword,
   fetchMockState,
   fillEditor,
+  rootNewFileButton,
 } from './helpers'
 
 const REPO = 'mockuser/scratch'
@@ -26,7 +27,7 @@ test.describe('Encryption round trip', () => {
 
     // Create a brand new file, write to it and save it. Because this
     // repository is uninitialized, saving asks for a brand new password.
-    await page.getByTestId('new-file-button').click()
+    await rootNewFileButton(page).click()
     await page.getByTestId('new-file-input').fill(FILE)
     await page.getByTestId('new-file-submit').click()
     await fillEditor(page, PLAINTEXT)

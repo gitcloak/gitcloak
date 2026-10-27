@@ -1,4 +1,4 @@
-import { test, expect, gotoApp, selectRepo } from './helpers'
+import { test, expect, gotoApp, selectRepo, rootNewFileButton } from './helpers'
 
 test.describe('App shell', () => {
   test('renders the sidebar, file tree, empty editor and account controls', async ({
@@ -24,7 +24,7 @@ test.describe('App shell', () => {
 
     // File navigator controls.
     await expect(page.getByTestId('refresh-files-button')).toBeVisible()
-    await expect(page.getByTestId('new-file-button')).toBeVisible()
+    await expect(rootNewFileButton(page)).toBeVisible()
 
     // Root tree nodes from the seed data.
     await expect(

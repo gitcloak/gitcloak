@@ -1,9 +1,18 @@
 'use client'
 
-import { useCallback, useState, useEffect, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Ellipsis, File as FileIcon, Lock } from 'lucide-react'
+import { useCallback, useState, useEffect, useRef, type ReactNode } from 'react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Ellipsis,
+  File as FileIcon,
+  FilePlus,
+  FolderPlus,
+  Lock,
+} from 'lucide-react'
 
-import { decryptEntryName, type FilenameKey } from '@/lib/filenames'
+import { Button } from '@/components/ui/button'
+import { decryptEntryName, decryptRepoPath, FOLDER_PLACEHOLDER, type FilenameKey } from '@/lib/filenames'
 import { cn } from '@/lib/utils'
 
 /** A row as stored in the repository. `name` and `path` are what GitHub has. */
@@ -19,7 +28,11 @@ interface FileTreeProps {
   repo: string
   /** Set while the repository is unlocked. Names are shown decrypted only then. */
   filenameKey?: FilenameKey | null
+  /** Set while the repository is unlocked. Folders can only be added then. */
+  isUnlocked?: boolean
   onFileSelect?: (path: string, sha: string) => void
+  /** Asks the owner to create an entry in `parentPath` (plain path, '' for the root). */
+  onCreateEntry?: (kind: 'file' | 'folder', parentPath: string) => void
   onRefresh?: () => void
   selectedFilePath?: string
   onLoadingChange?: (isLoading: boolean) => void
@@ -35,11 +48,79 @@ function sortNodes(nodes: TreeNode[], labelOf: (node: TreeNode) => string): Tree
   })
 }
 
+/**
+ * The placeholder that keeps an empty folder in the repository, in either
+ * naming scheme. Plain `.gitkeep` files are real files and stay visible.
+ */
+function isFolderPlaceholder(node: TreeNode, label: string): boolean {
+  if (node.type !== 'file' || !node.name.endsWith('.age')) return false
+  return label === FOLDER_PLACEHOLDER || node.name === `${FOLDER_PLACEHOLDER}.age`
+}
+
+interface RowActionsProps {
+  /** Name of the folder (or repository) the buttons add to, for their tooltips. */
+  where: string
+  /** Stored path of the folder, or '' for the repository root. */
+  path: string
+  canAddFile: boolean
+  canAddFolder: boolean
+  onAddFile: () => void
+  onAddFolder: () => void
+}
+
+/**
+ * New file and new folder buttons at the end of a tree row. Shown on hover or
+ * focus, and always on touch screens where there is no hover.
+ */
+function RowActions({
+  where,
+  path,
+  canAddFile,
+  canAddFolder,
+  onAddFile,
+  onAddFolder,
+}: RowActionsProps) {
+  return (
+    <span
+      className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
+      // The buttons sit inside a clickable row; they must not also toggle it.
+      onClick={(event) => event.stopPropagation()}
+    >
+      <Button
+        data-testid="tree-new-file-button"
+        data-path={path}
+        variant="ghost"
+        size="icon-xs"
+        title={canAddFile ? `New file in ${where}` : 'Unlock the repository to add items here'}
+        aria-label={`New file in ${where}`}
+        disabled={!canAddFile}
+        onClick={onAddFile}
+      >
+        <FilePlus className="size-3" />
+      </Button>
+      <Button
+        data-testid="tree-new-folder-button"
+        data-path={path}
+        variant="ghost"
+        size="icon-xs"
+        title={canAddFolder ? `New folder in ${where}` : 'Unlock the repository to add items here'}
+        aria-label={`New folder in ${where}`}
+        disabled={!canAddFolder}
+        onClick={onAddFolder}
+      >
+        <FolderPlus className="size-3" />
+      </Button>
+    </span>
+  )
+}
+
 export function FileTree({
   owner,
   repo,
   filenameKey = null,
+  isUnlocked = false,
   onFileSelect,
+  onCreateEntry,
   onRefresh,
   selectedFilePath,
   onLoadingChange,
@@ -49,12 +130,18 @@ export function FileTree({
   // rather than in each row so it can sort and label everything together.
   const [children, setChildren] = useState<Record<string, TreeNode[]>>({})
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  // Read by `loadRootContents` so a refresh keeps the folders that are open.
+  const expandedRef = useRef(expanded)
   const [loadingDirs, setLoadingDirs] = useState<Record<string, boolean>>({})
   // Plain names keyed by stored path. Only read while `filenameKey` is set.
   const [labels, setLabels] = useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+
+  useEffect(() => {
+    expandedRef.current = expanded
+  }, [expanded])
 
   const fetchEntries = useCallback(
     async (path: string): Promise<TreeNode[]> => {
@@ -75,9 +162,32 @@ export function FileTree({
     onLoadingChange?.(true)
     setError(null)
     try {
-      setRootNodes(await fetchEntries(''))
-      setChildren({})
-      setExpanded({})
+      // Re-read the open folders too, so a refresh after a save leaves the
+      // tree as the user had it. A folder that no longer exists closes.
+      const openPaths = Object.keys(expandedRef.current).filter(
+        (path) => expandedRef.current[path]
+      )
+      const [root, openFolders] = await Promise.all([
+        fetchEntries(''),
+        Promise.all(
+          openPaths.map(async (path) => ({
+            path,
+            entries: await fetchEntries(path).catch(() => null),
+          }))
+        ),
+      ])
+
+      const nextChildren: Record<string, TreeNode[]> = {}
+      const nextExpanded: Record<string, boolean> = {}
+      for (const { path, entries } of openFolders) {
+        if (entries) {
+          nextChildren[path] = entries
+          nextExpanded[path] = true
+        }
+      }
+      setRootNodes(root)
+      setChildren(nextChildren)
+      setExpanded(nextExpanded)
       onRefresh?.()
     } catch (err) {
       console.error('Error loading repository contents:', err)
@@ -143,8 +253,29 @@ export function FileTree({
     setExpanded(prev => ({ ...prev, [node.path]: !isOpen }))
   }
 
+  /**
+   * Start a new file or folder inside `node`, or at the root when `node` is
+   * null. The folder opens so the new entry shows once it is saved.
+   */
+  const createIn = async (kind: 'file' | 'folder', node: TreeNode | null) => {
+    if (!node) {
+      onCreateEntry?.(kind, '')
+      return
+    }
+    if (!expanded[node.path]) {
+      void toggleDirectory(node)
+    }
+    // Folder names are encrypted in storage, so the plain path is what the
+    // new entry needs.
+    const parent = filenameKey ? await decryptRepoPath(node.path, filenameKey, 'dir') : node.path
+    onCreateEntry?.(kind, parent)
+  }
+
   const renderNodes = (nodes: TreeNode[], level: number): ReactNode[] =>
-    sortNodes(nodes, labelOf).map((node) => {
+    sortNodes(
+      nodes.filter((node) => !isFolderPlaceholder(node, labelOf(node))),
+      labelOf
+    ).map((node) => {
       const isDir = node.type === 'dir'
       const isExpanded = Boolean(expanded[node.path])
       const isSelected = !isDir && node.path === selectedFilePath
@@ -164,7 +295,7 @@ export function FileTree({
             onClick={() => (isDir ? void toggleDirectory(node) : onFileSelect?.(node.path, node.sha))}
             style={{ paddingLeft: `${level * 12 + 6}px` }}
             className={cn(
-              'flex cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 text-[13px] transition-colors',
+              'group flex cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 text-[13px] transition-colors',
               'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
               isSelected
                 ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
@@ -199,6 +330,16 @@ export function FileTree({
               </span>
             )}
             <span className="truncate">{label}</span>
+            {isDir && (
+              <RowActions
+                where={label}
+                path={node.path}
+                canAddFile={isUnlocked}
+                canAddFolder={isUnlocked}
+                onAddFile={() => void createIn('file', node)}
+                onAddFolder={() => void createIn('folder', node)}
+              />
+            )}
           </div>
 
           {isDir && isExpanded && children[node.path] && (
@@ -230,16 +371,34 @@ export function FileTree({
     )
   }
 
-  if (rootNodes.length === 0) {
-    return (
+  // The repository row is always shown, so an empty repository can get its first file.
+  return (
+    <div className="flex flex-col gap-px">
       <div
-        data-testid="file-tree-empty"
-        className="px-2 py-4 text-[13px] text-muted-foreground"
+        data-testid="tree-root"
+        className="group flex items-center gap-1.5 rounded-md py-1 pl-1.5 pr-2 text-[13px] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
       >
-        No files found
+        <span className="truncate">{repo}</span>
+        <RowActions
+          where={repo}
+          path=""
+          canAddFile
+          canAddFolder={isUnlocked}
+          onAddFile={() => void createIn('file', null)}
+          onAddFolder={() => void createIn('folder', null)}
+        />
       </div>
-    )
-  }
 
-  return <div className="flex flex-col gap-px">{renderNodes(rootNodes, 0)}</div>
+      {rootNodes.length === 0 ? (
+        <div
+          data-testid="file-tree-empty"
+          className="px-2 py-4 text-[13px] text-muted-foreground"
+        >
+          No files found
+        </div>
+      ) : (
+        renderNodes(rootNodes, 0)
+      )}
+    </div>
+  )
 }
