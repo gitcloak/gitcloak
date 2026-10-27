@@ -17,6 +17,7 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 - **Password Verification**: Secure password verification without storing the password
 - **Interoperable**: Uses age format - decrypt your files anywhere with age-compatible tools
 - **Real-time Editing**: Edit files with live status updates and background saving
+- **Live Markdown**: Headings, emphasis, links, lists, quotes and code render as you type, Obsidian-style; the stored file is always the plain Markdown you wrote. A Source/Rendered toggle switches to the raw text; non-Markdown files always show raw text
 - **File Tree Navigation**: Browse and manage your repository files easily
 - **Responsive Shell**: Collapsible sidebar that becomes an off-canvas sheet on mobile
 - **Dark Mode**: Light/dark/system themes via `next-themes`, chosen in Settings
@@ -27,11 +28,11 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 
 1. **Authenticate** with your GitHub account via OAuth
 2. **Select** a repository you want to work with
-3. **Create or edit** files - they're automatically encrypted with age format before saving
+3. **Create or edit** files - they're automatically encrypted with age format before saving, under encrypted names too
 4. **Set a password** the first time you save an encrypted file in a repository
-5. **Files are saved** to GitHub with a `.age` extension, fully encrypted
+5. **Files are saved** to GitHub with a `.age` extension, fully encrypted, under encrypted names
 
-Your files remain in your GitHub repository, but they're encrypted at rest. Only someone with the repository password can decrypt them.
+Your files remain in your GitHub repository, but they're encrypted at rest. Only someone with the repository password can decrypt them, and only the repository password reveals their names.
 
 ## Security Model
 
@@ -39,7 +40,10 @@ Your files remain in your GitHub repository, but they're encrypted at rest. Only
 - **Password Verification**: Uses encrypted challenge string (never stores password)
 - **Client-Side Only**: All crypto operations happen in your browser
 - **Memory-Only Storage**: Passwords stored only in browser memory during session
+- **Encrypted File Names**: File names are encrypted with a key that is itself protected by the repository password. Locked, GitHub and the file tree only show the encrypted names. Unlocking a repository renames its older `.age` files to encrypted names too
 - **GitHub OAuth**: No password storage, uses GitHub's authentication
+
+Not hidden: folder names and plain (non-`.age`) files, the number of files and folders, folder depth, file sizes, commit times, and commit messages (which contain the stored names).
 
 **⚠️ Important**: Keep your repository passwords safe. If you lose a password, encrypted files in that repository cannot be recovered.
 
@@ -149,7 +153,7 @@ GitCloak is a standard Next.js application and can be deployed to any platform t
 5. Type your content
 6. Click "Save Changes"
 7. Enter and confirm a repository password
-8. Your file is encrypted and saved as \`secrets.md.age\`
+8. Your file is encrypted and saved under an encrypted name such as \`k3ql2w7ue6cxbtqjq5gkg2r2zq2y3d6nb4.age\`. Unlocked, GitCloak shows it as \`secrets.md\`
 
 ### Opening Encrypted Files
 
@@ -180,6 +184,7 @@ gitcloak/
 │   │   ├── ui/                # shadcn/ui primitives (button, dialog, sidebar, …)
 │   │   ├── app-sidebar.tsx    # Sidebar with file tree
 │   │   ├── editor-area.tsx    # File editor
+│   │   ├── markdown-editor.tsx # CodeMirror 6 editor with live Markdown rendering
 │   │   ├── file-tree.tsx      # Repository file browser
 │   │   └── ...
 │   ├── hooks/                 # Shared React hooks (use-mobile)
@@ -227,10 +232,12 @@ You can decrypt \`.age\` files using the [age CLI tool](https://github.com/FiloS
 brew install age  # macOS
 # or download from https://github.com/FiloSottile/age/releases
 
-# Decrypt a file
-age -d -o decrypted.md secrets.md.age
+# Decrypt a file (use the stored name shown by GitHub)
+age -d -o decrypted.md k3ql2w7ue6cxbtqjq5gkg2r2zq2y3d6nb4.age
 # Enter your repository password when prompted
 \`\`\`
+
+The contents are plain age, but the file name is encrypted, so the plain name (\`secrets.md\`) is only visible inside GitCloak while the repository is unlocked.
 
 ## Storage Backends
 
@@ -336,7 +343,7 @@ This project is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Roadmap
 
-- [ ] Markdown preview mode
+- [x] Markdown live preview while editing (rendered as you type)
 - [ ] File search functionality
 - [ ] Multiple file selection
 - [ ] File and folder creation via UI

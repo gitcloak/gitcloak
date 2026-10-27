@@ -1,3 +1,5 @@
+import 'server-only'
+
 import { Octokit } from '@octokit/rest'
 import {
   BackendConflictError,
@@ -6,6 +8,7 @@ import {
   type ContentsResult,
   type DirectoryEntry,
   type FileBackend,
+  type MoveFileParams,
   type RepositorySummary,
   type SaveFileParams,
   type SaveResult,
@@ -137,6 +140,76 @@ export class GitFileBackend implements FileBackend {
         throw new BackendConflictError(
           'The file changed on GitHub since it was opened. Reload and try again.'
         )
+      }
+      throw error
+    }
+  }
+
+  async moveFile({
+    owner,
+    repo,
+    from,
+    to,
+    fromSha,
+    message,
+  }: MoveFileParams): Promise<SaveResult> {
+    const source = await this.readBlob(owner, repo, from)
+    if (!source) {
+      throw new BackendNotFoundError(from)
+    }
+    if (source.sha !== fromSha) {
+      throw new BackendConflictError(
+        'The file changed on GitHub since it was opened. Reload and try again.'
+      )
+    }
+
+    // Identical bytes already at `to` mean an earlier attempt was interrupted
+    // after the write. Different bytes are someone else's file: stop.
+    const target = await this.readBlob(owner, repo, to)
+    let newSha = source.sha
+    if (target) {
+      if (!target.content.equals(source.content)) {
+        throw new BackendConflictError('A file with the new name already exists.')
+      }
+      newSha = target.sha
+    } else {
+      try {
+        const { data } = await this.octokit.repos.createOrUpdateFileContents({
+          owner,
+          repo,
+          path: to,
+          message,
+          content: source.content.toString('base64'),
+        })
+        newSha = data.content?.sha ?? newSha
+      } catch (error) {
+        if (isConflict(error)) {
+          throw new BackendConflictError('A file with the new name already exists.')
+        }
+        throw error
+      }
+    }
+
+    await this.octokit.repos.deleteFile({ owner, repo, path: from, message, sha: fromSha })
+
+    return { sha: newSha, path: to, name: basename(to) }
+  }
+
+  /** Raw bytes and blob sha of a file, or null when it does not exist. */
+  private async readBlob(
+    owner: string,
+    repo: string,
+    path: string
+  ): Promise<{ sha: string; content: Buffer } | null> {
+    try {
+      const { data } = await this.octokit.repos.getContent({ owner, repo, path })
+      if (Array.isArray(data) || data.type !== 'file' || !('content' in data)) {
+        return null
+      }
+      return { sha: data.sha, content: Buffer.from(data.content, 'base64') }
+    } catch (error) {
+      if (isNotFound(error)) {
+        return null
       }
       throw error
     }

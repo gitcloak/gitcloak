@@ -1,12 +1,15 @@
 import { createHash } from 'crypto'
 import { encryptWithPassword } from '../encryption'
-import { createGitCloakFile } from '../gitcloak'
+import { createGitCloakFile, openFilenameKey } from '../gitcloak'
+import { encryptRepoPath } from '../filenames'
 import {
+  BackendConflictError,
   BackendNotFoundError,
   type BackendKind,
   type ContentsResult,
   type DirectoryEntry,
   type FileBackend,
+  type MoveFileParams,
   type RepositorySummary,
   type SaveFileParams,
   type SaveResult,
@@ -21,10 +24,17 @@ import {
  * reset through the test-only `/api/test/reset` route.
  */
 
-/** Plaintext or password-encrypted seed content for a single file. */
+/**
+ * Plaintext or password-encrypted seed content for a single file. The
+ * `encrypted-name` seed is keyed by its plain path; it is stored under the
+ * encrypted name derived from the repository's `.gitcloak`.
+ */
 type SeedContent =
   | { kind: 'plain'; content: string }
+  /** A version 1.0 `.gitcloak`, from before encrypted file names. */
+  | { kind: 'gitcloak-v1'; password: string }
   | { kind: 'encrypted'; plaintext: string; password: string }
+  | { kind: 'encrypted-name'; plaintext: string; password: string }
   | { kind: 'gitcloak'; password: string }
 
 interface MockRepoSeed {
@@ -40,6 +50,7 @@ interface MockRepoState {
 
 const PASSWORD_REPO = 'demo-password'
 const ALT_PASSWORD = 'different-password'
+const PASSWORD_LEGACY = 'legacy-password'
 
 const REPO_SEEDS: MockRepoSeed[] = [
   {
@@ -75,6 +86,11 @@ const REPO_SEEDS: MockRepoSeed[] = [
         kind: 'plain',
         content: '- [ ] write tests\n- [x] ship backend abstraction\n',
       },
+      'journal.md': {
+        kind: 'encrypted-name',
+        password: PASSWORD_REPO,
+        plaintext: '# Journal\n\nThis file and its name are encrypted.\n',
+      },
     },
   },
   {
@@ -106,6 +122,30 @@ const REPO_SEEDS: MockRepoSeed[] = [
     },
     files: {},
   },
+  {
+    summary: {
+      id: 1004,
+      name: 'legacy-notes',
+      fullName: 'mockuser/legacy-notes',
+      owner: 'mockuser',
+      private: true,
+      description: 'Repository from before encrypted file names',
+      updatedAt: '2024-02-01T09:30:00.000Z',
+    },
+    files: {
+      '.gitcloak': { kind: 'gitcloak-v1', password: PASSWORD_LEGACY },
+      'welcome.md.age': {
+        kind: 'encrypted',
+        password: PASSWORD_LEGACY,
+        plaintext: '# Old note\n\nWritten before encrypted file names.\n',
+      },
+      'ideas.md.age': {
+        kind: 'encrypted',
+        password: PASSWORD_LEGACY,
+        plaintext: '# Ideas\n\n- rename the old files\n',
+      },
+    },
+  },
 ]
 
 function sha1(content: string): string {
@@ -130,7 +170,22 @@ class MockFileBackend implements FileBackend {
       for (const repo of REPO_SEEDS) {
         const files = new Map<string, string>()
         for (const [path, seed] of Object.entries(repo.files)) {
-          files.set(path, await materialize(seed))
+          if (seed.kind !== 'encrypted-name') {
+            files.set(path, await materialize(seed))
+          }
+        }
+        // Encrypted names depend on the repository's .gitcloak, so they come second.
+        const gitcloak = files.get('.gitcloak')
+        for (const [path, seed] of Object.entries(repo.files)) {
+          if (seed.kind !== 'encrypted-name') continue
+          if (gitcloak === undefined) {
+            throw new Error(`${repo.summary.fullName} needs .gitcloak to encrypt names`)
+          }
+          const key = await openFilenameKey(gitcloak, seed.password)
+          if (key === null) {
+            throw new Error(`${repo.summary.fullName} has no usable name key`)
+          }
+          files.set(await encryptRepoPath(path, key), await materialize(seed))
         }
         materialized.push({ summary: { ...repo.summary }, files })
       }
@@ -208,6 +263,29 @@ class MockFileBackend implements FileBackend {
     return { sha: sha1(content), path, name: basename(path) }
   }
 
+  async moveFile({ owner, repo, from, to, fromSha }: MoveFileParams): Promise<SaveResult> {
+    const state = await this.findRepo(owner, repo)
+    const content = state.files.get(from)
+    if (content === undefined) {
+      throw new BackendNotFoundError(from)
+    }
+    if (sha1(content) !== fromSha) {
+      throw new BackendConflictError(
+        'The file changed on GitHub since it was opened. Reload and try again.'
+      )
+    }
+
+    const existing = state.files.get(to)
+    if (existing !== undefined && existing !== content) {
+      throw new BackendConflictError('A file with the new name already exists.')
+    }
+    state.files.set(to, content)
+    state.files.delete(from)
+
+    state.summary.updatedAt = new Date().toISOString()
+    return { sha: sha1(content), path: to, name: basename(to) }
+  }
+
   /** Snapshot of every file so the test harness can assert stored content. */
   async dump(): Promise<Record<string, Record<string, string>>> {
     const repos = await this.ensureSeeded()
@@ -234,9 +312,15 @@ async function materialize(seed: SeedContent): Promise<string> {
     case 'plain':
       return seed.content
     case 'encrypted':
+    case 'encrypted-name':
       return encryptWithPassword(seed.plaintext, seed.password)
     case 'gitcloak':
       return createGitCloakFile(seed.password)
+    case 'gitcloak-v1': {
+      const current = JSON.parse(await createGitCloakFile(seed.password)) as Record<string, unknown>
+      delete current.nameKey
+      return JSON.stringify({ ...current, version: '1.0' }, null, 2)
+    }
   }
 }
 

@@ -1,12 +1,16 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Clock, PenLine, Save } from 'lucide-react'
+import { Clock, Code2, Eye, PenLine, Save } from 'lucide-react'
 
+import { MarkdownEditor } from '@/components/markdown-editor'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
+
+/** Markdown files (`.md`, `.markdown`, optionally encrypted as `.age`). */
+const MARKDOWN_FILE = /\.(md|markdown)(\.age)?$/i
 
 /** Idle time after the last keystroke before an autosave runs. */
 const AUTOSAVE_DELAY_MS = 1500
@@ -24,6 +28,8 @@ interface SelectedFile {
 
 interface EditorAreaProps {
   selectedFile: SelectedFile | null
+  /** Plain path to show for the open file; the stored path is shown when absent. */
+  displayPath?: string
   isLoading: boolean
   /** Save automatically after the user stops typing. */
   autosave: boolean
@@ -37,6 +43,7 @@ interface EditorAreaProps {
 
 export function EditorArea({
   selectedFile,
+  displayPath,
   isLoading,
   autosave,
   canAutosave,
@@ -60,6 +67,13 @@ export function EditorArea({
 
   const hasChanges = content !== savedContent
   const hasFile = Boolean(selectedFile)
+  // Markdown can be shown rendered or as source; the choice resets with each
+  // opened file because this component is keyed by `openId`. Other files are
+  // always shown as source, since rendering would misread e.g. `# comments`.
+  const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered')
+  // Decide by the plain name: stored names of encrypted files end in `.age` only.
+  const isMarkdown = Boolean(selectedFile && MARKDOWN_FILE.test(displayPath ?? selectedFile.path))
+  const rendered = isMarkdown && viewMode === 'rendered'
 
   const handleContentChange = (newContent: string) => {
     setContent(newContent)
@@ -148,7 +162,7 @@ export function EditorArea({
             {selectedFile ? (
               <>
                 <span data-testid="selected-file-path" className="truncate">
-                  {selectedFile.path}
+                  {displayPath ?? selectedFile.path}
                 </span>
                 {selectedFile.isNew && (
                   <span className="shrink-0 rounded-gc-sm bg-gc-success-bg px-2 py-0.5 text-xs font-medium text-gc-success-fg">
@@ -161,6 +175,38 @@ export function EditorArea({
             )}
           </div>
         </div>
+
+        {isMarkdown && (
+          <Button
+            data-testid="view-mode-toggle"
+            data-mode={viewMode}
+            onClick={() =>
+              setViewMode(viewMode === 'rendered' ? 'source' : 'rendered')
+            }
+            variant="outline"
+            size="sm"
+            aria-label={
+              viewMode === 'rendered'
+                ? 'Show raw Markdown source'
+                : 'Show rendered Markdown'
+            }
+            title={
+              viewMode === 'rendered'
+                ? 'Show raw Markdown source'
+                : 'Show rendered Markdown'
+            }
+            className="shrink-0"
+          >
+            {viewMode === 'rendered' ? (
+              <Code2 className="size-4" />
+            ) : (
+              <Eye className="size-4" />
+            )}
+            <span className="hidden sm:inline">
+              {viewMode === 'rendered' ? 'Source' : 'Rendered'}
+            </span>
+          </Button>
+        )}
 
         <Button
           data-testid="save-button"
@@ -195,12 +241,10 @@ export function EditorArea({
             </div>
           </div>
         ) : selectedFile ? (
-          <textarea
-            data-testid="editor-input"
+          <MarkdownEditor
             value={content}
-            onChange={(e) => handleContentChange(e.target.value)}
-            spellCheck={false}
-            className="min-h-0 flex-1 resize-none border-0 bg-gc-surface p-4 font-mono text-[13px] leading-relaxed text-gc-fg outline-none sm:p-6 sm:text-sm"
+            onChange={handleContentChange}
+            rendered={rendered}
           />
         ) : (
           <div

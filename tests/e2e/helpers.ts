@@ -56,6 +56,53 @@ export async function clickFileNode(page: Page, path: string): Promise<void> {
   await page.locator(`[data-testid="file-node"][data-path="${path}"]`).click()
 }
 
+/**
+ * Replace the whole editor document by typing into it, the way a user does.
+ * The editor renders Markdown live, so the visible text is not the source.
+ */
+export async function fillEditor(page: Page, text: string): Promise<void> {
+  await page.getByTestId('editor-input').locator('.cm-content').click()
+  await page.keyboard.press('ControlOrMeta+a')
+  if (text === '') {
+    await page.keyboard.press('Delete')
+  } else {
+    await page.keyboard.insertText(text)
+  }
+}
+
+/** The raw Markdown in the editor, read from the document (not the DOM). */
+export async function readEditorValue(page: Page): Promise<string | null> {
+  return page.evaluate(() => window.__getEditorValue?.() ?? null)
+}
+
+/** Wait until the editor's raw Markdown equals (or matches) `value`. */
+export async function expectEditorValue(
+  page: Page,
+  value: string | RegExp
+): Promise<void> {
+  const poll = expect.poll(() => readEditorValue(page))
+  if (typeof value === 'string') {
+    await poll.toBe(value)
+  } else {
+    await poll.toMatch(value)
+  }
+}
+
+/**
+ * Click a node by the name it shows. Locked repositories show stored
+ * (encrypted) names, so use the stored path there instead.
+ */
+export async function clickFileByName(page: Page, name: string): Promise<void> {
+  await page.locator(`[data-testid="file-node"][data-name="${name}"]`).click()
+}
+
+/** Stored path of the file the tree shows as `name` (valid while names are decrypted). */
+export async function storedPathOf(page: Page, name: string): Promise<string> {
+  const node = page.locator(`[data-testid="file-node"][data-name="${name}"]`)
+  await expect(node).toBeVisible()
+  return (await node.getAttribute('data-path')) as string
+}
+
 /** Wait for the editor to contain a specific file and value. */
 export async function expectEditor(
   page: Page,
@@ -64,7 +111,7 @@ export async function expectEditor(
 ): Promise<void> {
   await expect(page.getByTestId('selected-file-path')).toHaveText(path)
   if (valueMatcher !== undefined) {
-    await expect(page.getByTestId('editor-input')).toHaveValue(valueMatcher)
+    await expectEditorValue(page, valueMatcher)
   }
 }
 

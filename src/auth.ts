@@ -1,14 +1,7 @@
 import NextAuth from "next-auth"
 import GitHub from "next-auth/providers/github"
 
-/**
- * `profile` is typed as the generic `Profile`; the GitHub provider's payload is
- * a `GitHubProfile`, which carries `login`.
- */
-function githubLogin(profile: unknown): string | undefined {
-  const login = (profile as { login?: unknown })?.login
-  return typeof login === "string" ? login : undefined
-}
+import { applyJwt, toClientSession } from "@/lib/auth-callbacks"
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   secret: process.env.AUTH_SECRET,
@@ -34,40 +27,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
+    // The GitHub tokens stay in the encrypted JWT cookie only; the session
+    // returned to the browser carries just the user's identity.
     async jwt({ token, account, profile }) {
-      // Store the GitHub access token and user info in the JWT
-      if (account) {
-        token.accessToken = account.access_token
-        token.refreshToken = account.refresh_token
-        token.expiresAt = account.expires_at
-
-        // Log for debugging
-        console.log('Auth callback - account:', {
-          provider: account.provider,
-          type: account.type,
-          hasAccessToken: !!account.access_token,
-          tokenPreview: account.access_token?.substring(0, 20) + '...',
-          scope: account.scope,
-        })
-      }
-      if (profile) {
-        token.login = githubLogin(profile)
-      }
-      return token
+      return applyJwt(token, account, profile)
     },
     async session({ session, token }) {
-      // Make the access token and GitHub login available in the session
-      session.accessToken = token.accessToken as string
-      session.user.login = token.login as string
-
-      // Log for debugging
-      console.log('Session callback:', {
-        hasAccessToken: !!session.accessToken,
-        tokenPreview: session.accessToken?.substring(0, 20) + '...',
-      })
-
-      return session
+      return toClientSession(session, token)
     },
   },
-  debug: true, // Enable debug mode to see auth flow issues
+  // Auth.js debug output is verbose and can include token material; keep it
+  // to local development so it never reaches production or preview logs.
+  debug: process.env.NODE_ENV === "development",
 })

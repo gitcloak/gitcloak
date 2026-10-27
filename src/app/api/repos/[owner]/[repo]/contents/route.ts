@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server"
 import { getSession } from "@/lib/session"
 import { createFileBackend, isBackendNotFound } from "@/lib/backends"
+import {
+  isValidationError,
+  validateOwnerRepo,
+  validatePath,
+} from "@/lib/validation"
 
 export async function GET(
   request: Request,
@@ -15,9 +20,10 @@ export async function GET(
 
     const { owner, repo } = await params
     const { searchParams } = new URL(request.url)
-    const path = searchParams.get('path') || ''
+    validateOwnerRepo(owner, repo)
+    const path = validatePath(searchParams.get('path') ?? '', { allowRoot: true })
 
-    const backend = createFileBackend(session.accessToken)
+    const backend = await createFileBackend(session.accessToken)
     const result = await backend.getContents(owner, repo, path)
 
     // Keep the GitHub-compatible response shape the browser code expects:
@@ -37,6 +43,10 @@ export async function GET(
       encoding: 'base64',
     })
   } catch (error) {
+    if (isValidationError(error)) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
     if (isBackendNotFound(error)) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
