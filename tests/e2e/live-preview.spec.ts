@@ -4,14 +4,17 @@ import {
   expect,
   gotoApp,
   clickFileNode,
+  clickFileByName,
   expectEditor,
+  storedPathOf,
   expectEditorValue,
   fillEditor,
   readEditorValue,
   submitPassword,
 } from './helpers'
 
-const FILE = 'welcome.md.age'
+// Shown once unlocked. The file is stored under an encrypted name.
+const FILE = 'welcome.md'
 const PASSWORD = 'demo-password'
 
 async function unlockRepo(page: Page): Promise<void> {
@@ -21,13 +24,15 @@ async function unlockRepo(page: Page): Promise<void> {
     'data-repo-status',
     'unlocked'
   )
+  // Unlocking renames old file names; wait until that has finished.
+  await expect(page.getByTestId('notice')).toContainText('is now unlocked')
 }
 
 /** Opens the demo file in an unlocked repository, ready for typing. */
 async function openFile(page: Page): Promise<void> {
   await gotoApp(page)
   await unlockRepo(page)
-  await clickFileNode(page, FILE)
+  await clickFileByName(page, FILE)
   await expectEditor(page, FILE)
 }
 
@@ -256,10 +261,11 @@ test.describe('Live preview editor', () => {
     await expect(page.getByTestId('editor-status')).toHaveAttribute('data-status', 'saved')
 
     // A fresh page load decrypts the stored file; it must be the same text.
+    const storedPath = await storedPathOf(page, FILE)
     await page.reload()
     await gotoApp(page)
     await unlockRepo(page)
-    await clickFileNode(page, FILE)
+    await clickFileNode(page, storedPath)
     await expectEditor(page, FILE)
     await expect.poll(() => readEditorValue(page)).toBe(markdown)
   })

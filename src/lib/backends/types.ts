@@ -56,6 +56,18 @@ export interface SaveFileParams {
   sha?: string
 }
 
+export interface MoveFileParams {
+  owner: string
+  repo: string
+  /** Current path of the file. */
+  from: string
+  /** New path. The file's content is kept byte for byte. */
+  to: string
+  /** Blob sha of `from` as the caller last saw it (optimistic concurrency). */
+  fromSha: string
+  message: string
+}
+
 export interface SaveResult {
   sha: string
   path: string
@@ -113,4 +125,12 @@ export interface FileBackend {
 
   /** Create or update a file, returning the new blob metadata. */
   saveFile(params: SaveFileParams): Promise<SaveResult>
+
+  /**
+   * Rename a file without changing its content: write the same bytes at `to`,
+   * then remove `from`. If `to` already holds identical bytes the write is
+   * skipped, so an interrupted rename can be retried. A different file at `to`
+   * is a conflict and nothing is removed.
+   */
+  moveFile(params: MoveFileParams): Promise<SaveResult>
 }
