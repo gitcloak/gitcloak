@@ -35,6 +35,14 @@ test.describe('Encrypted file names', () => {
       page.locator('[data-testid="file-node"][data-name="journal.md"]')
     ).toHaveCount(0)
 
+    // Encrypted files are marked with a lock, locked or not; plain files are not.
+    await expect(
+      page.locator(`[data-testid="file-node"][data-path="${storedPath}"]`)
+    ).toHaveAttribute('data-protected', 'true')
+    await expect(
+      page.locator('[data-testid="file-node"][data-path="README.md"]')
+    ).toHaveAttribute('data-protected', 'false')
+
     // Unlocked: the plain name replaces it, and the file opens under that name.
     await page.getByTestId('repo-lock-toggle').click()
     await submitPassword(page, 'unlock', PASSWORD)

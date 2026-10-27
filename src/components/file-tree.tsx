@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useState, useEffect, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Ellipsis, File as FileIcon } from 'lucide-react'
+import { ChevronDown, ChevronRight, Ellipsis, File as FileIcon, Lock } from 'lucide-react'
 
 import { decryptEntryName, type FilenameKey } from '@/lib/filenames'
 import { cn } from '@/lib/utils'
@@ -149,6 +149,8 @@ export function FileTree({
       const isExpanded = Boolean(expanded[node.path])
       const isSelected = !isDir && node.path === selectedFilePath
       const label = labelOf(node)
+      // `.age` files are encrypted whether or not the repository is unlocked.
+      const isProtected = !isDir && node.name.endsWith('.age')
 
       return (
         <div key={node.path}>
@@ -157,6 +159,7 @@ export function FileTree({
             data-path={node.path}
             data-name={label}
             data-node-type={node.type}
+            data-protected={isProtected}
             data-selected={isSelected}
             onClick={() => (isDir ? void toggleDirectory(node) : onFileSelect?.(node.path, node.sha))}
             style={{ paddingLeft: `${level * 12 + 6}px` }}
@@ -178,8 +181,20 @@ export function FileTree({
                   <ChevronRight className="size-3" />
                 )}
               </span>
+            ) : isProtected ? (
+              <span
+                className="flex w-3 shrink-0 items-center justify-center text-sidebar-foreground"
+                title="Encrypted file"
+                aria-label="Encrypted file"
+              >
+                <Lock className="size-3" />
+              </span>
             ) : (
-              <span className="flex w-3 shrink-0 items-center justify-center text-muted-foreground">
+              <span
+                className="flex w-3 shrink-0 items-center justify-center text-muted-foreground"
+                title="Plain file"
+                aria-label="Plain file"
+              >
                 <FileIcon className="size-3" />
               </span>
             )}
