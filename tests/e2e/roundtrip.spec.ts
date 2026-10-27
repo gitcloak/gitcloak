@@ -7,6 +7,7 @@ import {
   expectEditor,
   submitPassword,
   fetchMockState,
+  fillEditor,
 } from './helpers'
 
 const REPO = 'mockuser/scratch'
@@ -28,7 +29,7 @@ test.describe('Encryption round trip', () => {
     await page.getByTestId('new-file-button').click()
     await page.getByTestId('new-file-input').fill(FILE)
     await page.getByTestId('new-file-submit').click()
-    await page.getByTestId('editor-input').fill(PLAINTEXT)
+    await fillEditor(page, PLAINTEXT)
     await page.getByTestId('save-button').click()
 
     await expect(page.getByTestId('set-password-title')).toBeVisible()

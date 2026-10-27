@@ -4,6 +4,7 @@ import {
   gotoApp,
   clickFileByName,
   expectEditor,
+  fillEditor,
   submitPassword,
   fetchMockState,
 } from './helpers'
@@ -72,7 +73,7 @@ test.describe('Encrypted file names', () => {
     await page.getByTestId('new-file-button').click()
     await page.getByTestId('new-file-input').fill('archive/plan.md')
     await page.getByTestId('new-file-submit').click()
-    await page.getByTestId('editor-input').fill('# Plan\n')
+    await fillEditor(page, '# Plan\n')
     await page.getByTestId('save-button').click()
 
     await expect(page.getByTestId('notice')).toContainText('Saved archive/plan.md')

@@ -57,6 +57,38 @@ export async function clickFileNode(page: Page, path: string): Promise<void> {
 }
 
 /**
+ * Replace the whole editor document by typing into it, the way a user does.
+ * The editor renders Markdown live, so the visible text is not the source.
+ */
+export async function fillEditor(page: Page, text: string): Promise<void> {
+  await page.getByTestId('editor-input').locator('.cm-content').click()
+  await page.keyboard.press('ControlOrMeta+a')
+  if (text === '') {
+    await page.keyboard.press('Delete')
+  } else {
+    await page.keyboard.insertText(text)
+  }
+}
+
+/** The raw Markdown in the editor, read from the document (not the DOM). */
+export async function readEditorValue(page: Page): Promise<string | null> {
+  return page.evaluate(() => window.__getEditorValue?.() ?? null)
+}
+
+/** Wait until the editor's raw Markdown equals (or matches) `value`. */
+export async function expectEditorValue(
+  page: Page,
+  value: string | RegExp
+): Promise<void> {
+  const poll = expect.poll(() => readEditorValue(page))
+  if (typeof value === 'string') {
+    await poll.toBe(value)
+  } else {
+    await poll.toMatch(value)
+  }
+}
+
+/**
  * Click a node by the name it shows. Locked repositories show stored
  * (encrypted) names, so use the stored path there instead.
  */
@@ -79,7 +111,7 @@ export async function expectEditor(
 ): Promise<void> {
   await expect(page.getByTestId('selected-file-path')).toHaveText(path)
   if (valueMatcher !== undefined) {
-    await expect(page.getByTestId('editor-input')).toHaveValue(valueMatcher)
+    await expectEditorValue(page, valueMatcher)
   }
 }
 

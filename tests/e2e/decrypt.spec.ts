@@ -5,6 +5,7 @@ import {
   clickFileNode,
   clickFileByName,
   expectEditor,
+  expectEditorValue,
   submitPassword,
 } from './helpers'
 
@@ -22,9 +23,7 @@ test.describe('File decryption', () => {
 
     // The old name is encrypted on unlock, and the open file follows it.
     await expectEditor(page, 'welcome.md', /Welcome/)
-    await expect(page.getByTestId('editor-input')).toHaveValue(
-      /encrypted with the repository password/
-    )
+    await expectEditorValue(page, /encrypted with the repository password/)
     await expect(page.getByTestId('repo-lock-status')).toHaveAttribute(
       'data-repo-status',
       'unlocked'

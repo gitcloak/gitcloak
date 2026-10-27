@@ -4,6 +4,8 @@ import {
   gotoApp,
   selectRepo,
   fetchMockState,
+  fillEditor,
+  expectEditorValue,
 } from './helpers'
 
 test.describe('Creating and saving files', () => {
@@ -24,11 +26,11 @@ test.describe('Creating and saving files', () => {
     // A brand new, empty file is opened in the editor.
     await expect(page.getByTestId('selected-file-path')).toHaveText('hello.md')
     await expect(page.getByTestId('editor-title')).toContainText('New')
-    await expect(page.getByTestId('editor-input')).toHaveValue('')
+    await expectEditorValue(page, '')
     await expect(page.getByTestId('save-button')).toBeDisabled()
 
     // Editing enables save.
-    await page.getByTestId('editor-input').fill('# Hello from the test\n')
+    await fillEditor(page, '# Hello from the test\n')
     await expect(page.getByTestId('editor-status')).toHaveAttribute(
       'data-status',
       'modified'
@@ -90,7 +92,7 @@ test.describe('Creating and saving files', () => {
     await page.getByTestId('new-file-button').click()
     await page.getByTestId('new-file-input').fill('draft.md')
     await page.getByTestId('new-file-submit').click()
-    await page.getByTestId('editor-input').fill('# Draft\n')
+    await fillEditor(page, '# Draft\n')
     await page.getByTestId('save-button').click()
 
     await expect(page.getByTestId('save-password-title')).toBeVisible()
@@ -132,11 +134,11 @@ test.describe('Creating and saving files', () => {
 
     await expect(page.getByTestId('save-button')).toBeDisabled()
 
-    await page.getByTestId('editor-input').fill('now there is content')
+    await fillEditor(page, 'now there is content')
     await expect(page.getByTestId('save-button')).toBeEnabled()
 
     // Reverting to the original (empty) content disables save again.
-    await page.getByTestId('editor-input').fill('')
+    await fillEditor(page, '')
     await expect(page.getByTestId('save-button')).toBeDisabled()
   })
 })

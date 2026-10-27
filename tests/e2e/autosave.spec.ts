@@ -6,6 +6,8 @@ import {
   clickFileNode,
   clickFileByName,
   expectEditor,
+  expectEditorValue,
+  fillEditor,
   storedPathOf,
   submitPassword,
   fetchMockState,
@@ -49,7 +51,7 @@ test.describe('Autosave', () => {
     await clickFileByName(page, FILE)
     await expectEditor(page, FILE)
 
-    await page.getByTestId('editor-input').fill(EDITED)
+    await fillEditor(page, EDITED)
     await expect(page.getByTestId('editor-status')).toHaveAttribute('data-status', 'modified')
 
     await page.waitForTimeout(PAST_AUTOSAVE_DELAY_MS)
@@ -70,7 +72,7 @@ test.describe('Autosave', () => {
     const storedPath = await storedPathOf(page, FILE)
     const before = (await fetchMockState(request))[REPO][storedPath]
 
-    await page.getByTestId('editor-input').fill(EDITED)
+    await fillEditor(page, EDITED)
     await expect(page.getByTestId('autosave-status')).toHaveAttribute('data-state', 'on')
     await expect(page.getByTestId('editor-status')).toHaveAttribute('data-status', 'saved')
     await expect(page.getByTestId('save-button')).toHaveAttribute('data-state', 'clean')
@@ -115,19 +117,18 @@ test.describe('Autosave', () => {
     await expectEditor(page, FILE)
     const storedPath = await storedPathOf(page, FILE)
 
-    const editor = page.getByTestId('editor-input')
-    await editor.fill('# Welcome\n\nFirst.\n')
+    await fillEditor(page, '# Welcome\n\nFirst.\n')
     await expect(page.getByTestId('editor-status')).toHaveAttribute('data-status', 'saving')
 
     // Typing while the save is still running must not be blocked or reverted.
-    await editor.fill('# Welcome\n\nFirst.\nSecond.\n')
-    await expect(editor).toHaveValue('# Welcome\n\nFirst.\nSecond.\n')
+    await fillEditor(page, '# Welcome\n\nFirst.\nSecond.\n')
+    await expectEditorValue(page, '# Welcome\n\nFirst.\nSecond.\n')
 
     releaseFirstSave()
     await expect(page.getByTestId('editor-status')).toHaveAttribute('data-status', 'saved', {
       timeout: 20_000,
     })
-    await expect(editor).toHaveValue('# Welcome\n\nFirst.\nSecond.\n')
+    await expectEditorValue(page, '# Welcome\n\nFirst.\nSecond.\n')
 
     // The latest text, not the snapshot taken when the first save started, is
     // what ends up stored.
@@ -156,7 +157,7 @@ test.describe('Autosave', () => {
       'locked'
     )
 
-    await page.getByTestId('editor-input').fill(EDITED)
+    await fillEditor(page, EDITED)
     await expect(page.getByTestId('autosave-status')).toHaveAttribute('data-state', 'paused')
 
     await page.waitForTimeout(PAST_AUTOSAVE_DELAY_MS)
