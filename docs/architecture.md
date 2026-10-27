@@ -60,7 +60,9 @@ src/
   components/             UI. No fetch to anything but our own /api. No secrets in props that leave the client.
     ui/                   shadcn primitives. Do not hand-edit; regenerate.
   lib/
-    encryption.ts         age wrapper. Browser-side. The ONLY file that imports age-encryption.
+    encryption.ts         Browser API for age. Sends encrypt/decrypt requests to the worker below.
+    age-passphrase.ts     age passphrase core. The ONLY file that imports age-encryption. Runs in the worker.
+    encryption-worker.ts  Web Worker that runs scrypt off the main thread, so the UI never freezes.
     gitcloak.ts           .gitcloak create/verify, browser-side.
     filenames.ts          Encrypted file and folder names, browser-side. Keys come from a secret wrapped in .gitcloak.
     name-migration.ts     Upgrades old repositories to encrypted names on unlock (browser-side).
@@ -89,7 +91,7 @@ Each has a test or a check. If you change code that touches one, prove it still 
 
 **Crypto and secrets**
 
-1. `age-encryption` is imported only in `lib/encryption.ts`; `lib/encryption`, `lib/gitcloak` and `lib/filenames` are imported only from client code (and the mock backend's seed data). No server route may decrypt or accept a password.
+1. `age-encryption` is imported only in `lib/age-passphrase.ts`, which runs in the Web Worker `lib/encryption-worker.ts`; `lib/encryption`, `lib/gitcloak` and `lib/filenames` are imported only from client code (and the mock backend's seed data). No server route may decrypt or accept a password.
 2. Passwords and plaintext live only in React state and are cleared on lock (`handleLockRepo`). Never write them to storage, URLs, logs, error messages, analytics or `data-*` attributes.
 3. Passwords are never sent over the network. Request bodies to `/api/repos/**/save` carry ciphertext only.
 4. Crypto stays in age passphrase mode; do not hand-roll primitives, change the armor format, or add a "remember password" feature without a design review. Changes to the scrypt work factor or `.gitcloak` format need a version bump and a migration path for existing repositories. **Exception: file names** (`lib/filenames.ts`). age cannot encrypt a name deterministically, so names use an SIV-style construction over WebCrypto (HMAC-SHA256 as the synthetic IV, AES-CTR, keys from HKDF-SHA256). The keys come from a random 32-byte secret stored in `.gitcloak` (version 1.1) as `nameKey`, wrapped with age under the repository password. Names are therefore as hard to guess as the contents: never derive name keys directly from the password, because public names would then give a fast offline check. The construction is new and has not had an independent review; get one before relying on it for anything beyond name hiding.
@@ -137,7 +139,7 @@ The app is stateless and serverless-friendly. Keep it that way.
 - **Routes stay thin.** A handler does: origin check, session, validate, backend call, shape response, map errors. Business logic goes in `lib/`. Share the pattern; do not copy-paste auth/validation blocks into a fifth route. When a third route needs it, extract a `withSession`/`parseRequest` helper.
 - **Storage goes through `FileBackend`.** New operations (delete, rename, history) are added to the interface in `lib/backends/types.ts` and implemented in **both** `git.ts` and `mock.ts`. Backends return normalized data; HTTP shaping stays in routes. This keeps alternative backends (GitLab, S3, local) possible without touching the UI.
 - **GitHub API budget.** GitHub rate-limits per user token. Prefer one call per user action; use pagination for `listRepositories`/directory listings when exceeding 100 items rather than raising `per_page` blindly; use conditional requests (ETag) before adding polling. Never poll.
-- **Large content.** Request bodies are capped (`MAX_BODY_BYTES`). Encrypt-on-client for big files blocks the main thread; keep using `yieldToMain`, move to a Web Worker before supporting large files, and stream rather than buffer if limits are raised.
+- **Large content.** Request bodies are capped (`MAX_BODY_BYTES`). age's scrypt runs in a Web Worker (`lib/encryption-worker.ts`), so unlock, decrypt and save never block the UI. Keep that work off the main thread. Stream rather than buffer if file size limits are raised.
 - **Client state.** `client-page.tsx` is already large. New features should extract hooks/components (e.g. `useRepoPasswords`) rather than grow it; keep secrets in one well-defined store that `lock` can clear in one call.
 - **Config.** All env access is read in one place per concern (`auth.ts`, `backends/index.ts`, `next.config.ts`). Fail fast on missing required config at startup rather than at first request. Document every variable in `.env.example`.
 - **Versioned formats.** Anything persisted in a user's repo (`.gitcloak`, file headers, naming conventions) carries a version and must stay readable by older and newer clients. Prefer additive changes. `.gitcloak` version 1.1 added `nameKey` (additive: 1.0 clients ignore it). Encrypted names (`lib/filenames.ts`) have no version marker of their own: the HKDF labels (`gitcloak-filename-mac-v1`, `gitcloak-filename-enc-v1`), the SIV construction and the 16-byte tag are fixed for every repository. Changing any of them makes existing names unreadable (they then show as stored, and nothing is lost), so add a marker and a migration first. A version 1.0 `.gitcloak` is upgraded to 1.1 on the first unlock (`name-migration.ts`).
