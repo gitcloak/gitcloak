@@ -1,10 +1,12 @@
 'use client'
 
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState, useEffect, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Ellipsis, File as FileIcon } from 'lucide-react'
 
+import { decryptEntryName, type FilenameKey } from '@/lib/filenames'
 import { cn } from '@/lib/utils'
 
+/** A row as stored in the repository. `name` and `path` are what GitHub has. */
 interface TreeNode {
   name: string
   path: string
@@ -15,160 +17,67 @@ interface TreeNode {
 interface FileTreeProps {
   owner: string
   repo: string
+  /** Set while the repository is unlocked. Names are shown decrypted only then. */
+  filenameKey?: FilenameKey | null
   onFileSelect?: (path: string, sha: string) => void
   onRefresh?: () => void
   selectedFilePath?: string
   onLoadingChange?: (isLoading: boolean) => void
 }
 
-function TreeItem({
-  node,
-  owner,
-  repo,
-  level = 0,
-  onFileSelect,
-  selectedFilePath,
-}: {
-  node: TreeNode
-  owner: string
-  repo: string
-  level?: number
-  onFileSelect?: (path: string, sha: string) => void
-  selectedFilePath?: string
-}) {
-  const [isExpanded, setIsExpanded] = useState(false)
-  const [children, setChildren] = useState<TreeNode[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-
-  const handleToggle = async () => {
-    if (node.type === 'file') {
-      onFileSelect?.(node.path, node.sha)
-      return
+/** Directories first, then files, each alphabetically by the label they show. */
+function sortNodes(nodes: TreeNode[], labelOf: (node: TreeNode) => string): TreeNode[] {
+  return [...nodes].sort((a, b) => {
+    if (a.type === b.type) {
+      return labelOf(a).localeCompare(labelOf(b))
     }
-
-    if (!isExpanded && children.length === 0) {
-      // Load children
-      setIsLoading(true)
-      try {
-        const response = await fetch(
-          `/api/repos/${owner}/${repo}/contents?path=${encodeURIComponent(node.path)}`
-        )
-        const data = await response.json()
-
-        // Sort: directories first, then files, alphabetically
-        const sorted = (Array.isArray(data) ? data : []).sort(
-          (a: TreeNode, b: TreeNode) => {
-            if (a.type === b.type) {
-              return a.name.localeCompare(b.name)
-            }
-            return a.type === 'dir' ? -1 : 1
-          }
-        )
-
-        setChildren(sorted)
-      } catch (error) {
-        console.error('Error loading folder contents:', error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    setIsExpanded(!isExpanded)
-  }
-
-  const isSelected = node.type === 'file' && node.path === selectedFilePath
-
-  return (
-    <div>
-      <div
-        data-testid="file-node"
-        data-path={node.path}
-        data-node-type={node.type}
-        data-selected={isSelected}
-        onClick={handleToggle}
-        style={{ paddingLeft: `${level * 12 + 6}px` }}
-        className={cn(
-          'flex cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 text-[13px] transition-colors',
-          'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-          isSelected
-            ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
-            : 'text-sidebar-foreground'
-        )}
-      >
-        {node.type === 'dir' ? (
-          <span className="flex w-3 shrink-0 items-center justify-center text-muted-foreground">
-            {isLoading ? (
-              <Ellipsis className="size-3" />
-            ) : isExpanded ? (
-              <ChevronDown className="size-3" />
-            ) : (
-              <ChevronRight className="size-3" />
-            )}
-          </span>
-        ) : (
-          <span className="flex w-3 shrink-0 items-center justify-center text-muted-foreground">
-            <FileIcon className="size-3" />
-          </span>
-        )}
-        <span className="truncate">{node.name}</span>
-      </div>
-
-      {isExpanded && children.length > 0 && (
-        <div>
-          {children.map((child) => (
-            <TreeItem
-              key={child.path}
-              node={child}
-              owner={owner}
-              repo={repo}
-              level={level + 1}
-              onFileSelect={onFileSelect}
-              selectedFilePath={selectedFilePath}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  )
+    return a.type === 'dir' ? -1 : 1
+  })
 }
 
 export function FileTree({
   owner,
   repo,
+  filenameKey = null,
   onFileSelect,
   onRefresh,
   selectedFilePath,
   onLoadingChange,
 }: FileTreeProps) {
   const [rootNodes, setRootNodes] = useState<TreeNode[]>([])
+  // Loaded folder contents keyed by stored path. The tree keeps them here
+  // rather than in each row so it can sort and label everything together.
+  const [children, setChildren] = useState<Record<string, TreeNode[]>>({})
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [loadingDirs, setLoadingDirs] = useState<Record<string, boolean>>({})
+  // Plain names keyed by stored path. Only read while `filenameKey` is set.
+  const [labels, setLabels] = useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+
+  const fetchEntries = useCallback(
+    async (path: string): Promise<TreeNode[]> => {
+      const response = await fetch(
+        `/api/repos/${owner}/${repo}/contents?path=${encodeURIComponent(path)}&t=${Date.now()}`
+      )
+      if (!response.ok) {
+        throw new Error('Failed to load repository contents')
+      }
+      const data = await response.json()
+      return Array.isArray(data) ? data : []
+    },
+    [owner, repo]
+  )
 
   const loadRootContents = useCallback(async () => {
     setIsLoading(true)
     onLoadingChange?.(true)
     setError(null)
     try {
-      const response = await fetch(
-        `/api/repos/${owner}/${repo}/contents?t=${Date.now()}`
-      )
-      if (!response.ok) {
-        throw new Error('Failed to load repository contents')
-      }
-      const data = await response.json()
-
-      // Sort: directories first, then files, alphabetically
-      const sorted = (Array.isArray(data) ? data : []).sort(
-        (a: TreeNode, b: TreeNode) => {
-          if (a.type === b.type) {
-            return a.name.localeCompare(b.name)
-          }
-          return a.type === 'dir' ? -1 : 1
-        }
-      )
-
-      setRootNodes(sorted)
+      setRootNodes(await fetchEntries(''))
+      setChildren({})
+      setExpanded({})
       onRefresh?.()
     } catch (err) {
       console.error('Error loading repository contents:', err)
@@ -177,11 +86,32 @@ export function FileTree({
       setIsLoading(false)
       onLoadingChange?.(false)
     }
-  }, [owner, repo, onLoadingChange, onRefresh])
+  }, [fetchEntries, onLoadingChange, onRefresh])
 
   useEffect(() => {
     loadRootContents()
   }, [loadRootContents, refreshTrigger])
+
+  // Decrypt every loaded name whenever the key or the listing changes.
+  useEffect(() => {
+    if (!filenameKey) return
+    let cancelled = false
+    const nodes = [...rootNodes, ...Object.values(children).flat()]
+
+    void (async () => {
+      const next: Record<string, string> = {}
+      for (const node of nodes) {
+        next[node.path] = await decryptEntryName(node.name, node.type, filenameKey)
+      }
+      if (!cancelled) {
+        setLabels(next)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [filenameKey, rootNodes, children])
 
   // Expose refresh function
   useEffect(() => {
@@ -191,6 +121,77 @@ export function FileTree({
       delete window.__fileTreeRefresh
     }
   }, [])
+
+  // Never show a decrypted name while locked, even before the labels catch up.
+  const labelOf = (node: TreeNode): string => (filenameKey && labels[node.path]) || node.name
+
+  const toggleDirectory = async (node: TreeNode) => {
+    const isOpen = Boolean(expanded[node.path])
+
+    if (!isOpen && !children[node.path]) {
+      setLoadingDirs(prev => ({ ...prev, [node.path]: true }))
+      try {
+        const entries = await fetchEntries(node.path)
+        setChildren(prev => ({ ...prev, [node.path]: entries }))
+      } catch (err) {
+        console.error('Error loading folder contents:', err)
+      } finally {
+        setLoadingDirs(prev => ({ ...prev, [node.path]: false }))
+      }
+    }
+
+    setExpanded(prev => ({ ...prev, [node.path]: !isOpen }))
+  }
+
+  const renderNodes = (nodes: TreeNode[], level: number): ReactNode[] =>
+    sortNodes(nodes, labelOf).map((node) => {
+      const isDir = node.type === 'dir'
+      const isExpanded = Boolean(expanded[node.path])
+      const isSelected = !isDir && node.path === selectedFilePath
+      const label = labelOf(node)
+
+      return (
+        <div key={node.path}>
+          <div
+            data-testid="file-node"
+            data-path={node.path}
+            data-name={label}
+            data-node-type={node.type}
+            data-selected={isSelected}
+            onClick={() => (isDir ? void toggleDirectory(node) : onFileSelect?.(node.path, node.sha))}
+            style={{ paddingLeft: `${level * 12 + 6}px` }}
+            className={cn(
+              'flex cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 text-[13px] transition-colors',
+              'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+              isSelected
+                ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+                : 'text-sidebar-foreground'
+            )}
+          >
+            {isDir ? (
+              <span className="flex w-3 shrink-0 items-center justify-center text-muted-foreground">
+                {loadingDirs[node.path] ? (
+                  <Ellipsis className="size-3" />
+                ) : isExpanded ? (
+                  <ChevronDown className="size-3" />
+                ) : (
+                  <ChevronRight className="size-3" />
+                )}
+              </span>
+            ) : (
+              <span className="flex w-3 shrink-0 items-center justify-center text-muted-foreground">
+                <FileIcon className="size-3" />
+              </span>
+            )}
+            <span className="truncate">{label}</span>
+          </div>
+
+          {isDir && isExpanded && children[node.path] && (
+            <div>{renderNodes(children[node.path], level + 1)}</div>
+          )}
+        </div>
+      )
+    })
 
   if (isLoading) {
     return (
@@ -225,18 +226,5 @@ export function FileTree({
     )
   }
 
-  return (
-    <div className="flex flex-col gap-px">
-      {rootNodes.map((node) => (
-        <TreeItem
-          key={node.path}
-          node={node}
-          owner={owner}
-          repo={repo}
-          onFileSelect={onFileSelect}
-          selectedFilePath={selectedFilePath}
-        />
-      ))}
-    </div>
-  )
+  return <div className="flex flex-col gap-px">{renderNodes(rootNodes, 0)}</div>
 }

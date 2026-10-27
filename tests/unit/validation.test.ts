@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createGitCloakFile } from '@/lib/gitcloak'
 import {
   isSameOrigin,
+  validateMovePayload,
   validateOwnerRepo,
   validatePath,
   validateSavePayload,
@@ -82,6 +83,43 @@ describe('validateSavePayload', () => {
   it('refuses non-object bodies', () => {
     expect(() => validateSavePayload(null)).toThrow()
     expect(() => validateSavePayload([])).toThrow()
+  })
+})
+
+describe('validateMovePayload', () => {
+  it('accepts renaming a .age file to another .age path', () => {
+    expect(
+      validateMovePayload({ from: 'welcome.md.age', to: 'k3ql2w7ue6cx.age', fromSha: SHA })
+    ).toEqual({ from: 'welcome.md.age', to: 'k3ql2w7ue6cx.age', fromSha: SHA })
+  })
+
+  it('rejects moving anything that is not an .age file, including .gitcloak', () => {
+    expect(() => validateMovePayload({ from: 'README.md', to: 'x.age', fromSha: SHA })).toThrow(
+      'Only .age files can be renamed'
+    )
+    expect(() => validateMovePayload({ from: '.gitcloak', to: 'x.age', fromSha: SHA })).toThrow(
+      'Only .age files can be renamed'
+    )
+  })
+
+  it('rejects targets that are not encrypted files or live under .github', () => {
+    expect(() => validateMovePayload({ from: 'a.age', to: 'plain.md', fromSha: SHA })).toThrow(
+      'Only .age files can be renamed'
+    )
+    expect(() => validateMovePayload({ from: 'a.age', to: '.gitcloak', fromSha: SHA })).toThrow()
+    expect(() =>
+      validateMovePayload({ from: 'a.age', to: '.github/x.age', fromSha: SHA })
+    ).toThrow('Writing to .github is not allowed')
+  })
+
+  it('rejects traversal, a missing sha and a no-op rename', () => {
+    expect(() => validateMovePayload({ from: '../a.age', to: 'b.age', fromSha: SHA })).toThrow()
+    expect(() => validateMovePayload({ from: 'a.age', to: 'b.age', fromSha: 'nope' })).toThrow(
+      'Invalid sha'
+    )
+    expect(() => validateMovePayload({ from: 'a.age', to: 'a.age', fromSha: SHA })).toThrow(
+      'must differ'
+    )
   })
 })
 

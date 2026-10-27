@@ -56,6 +56,21 @@ export async function clickFileNode(page: Page, path: string): Promise<void> {
   await page.locator(`[data-testid="file-node"][data-path="${path}"]`).click()
 }
 
+/**
+ * Click a node by the name it shows. Locked repositories show stored
+ * (encrypted) names, so use the stored path there instead.
+ */
+export async function clickFileByName(page: Page, name: string): Promise<void> {
+  await page.locator(`[data-testid="file-node"][data-name="${name}"]`).click()
+}
+
+/** Stored path of the file the tree shows as `name` (valid while names are decrypted). */
+export async function storedPathOf(page: Page, name: string): Promise<string> {
+  const node = page.locator(`[data-testid="file-node"][data-name="${name}"]`)
+  await expect(node).toBeVisible()
+  return (await node.getAttribute('data-path')) as string
+}
+
 /** Wait for the editor to contain a specific file and value. */
 export async function expectEditor(
   page: Page,

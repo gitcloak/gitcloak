@@ -3,6 +3,7 @@ import {
   expect,
   gotoApp,
   clickFileNode,
+  clickFileByName,
   expectEditor,
   submitPassword,
 } from './helpers'
@@ -19,7 +20,8 @@ test.describe('File decryption', () => {
     await expect(page.getByTestId('unlock-title')).toBeVisible()
     await submitPassword(page, 'unlock', 'demo-password')
 
-    await expectEditor(page, 'welcome.md.age', /Welcome/)
+    // The old name is encrypted on unlock, and the open file follows it.
+    await expectEditor(page, 'welcome.md', /Welcome/)
     await expect(page.getByTestId('editor-input')).toHaveValue(
       /encrypted with the repository password/
     )
@@ -41,17 +43,18 @@ test.describe('File decryption', () => {
       'data-repo-status',
       'unlocked'
     )
+    // Unlocking renames old file names; wait until that has finished.
+    await expect(page.getByTestId('notice')).toContainText('is now unlocked')
 
     await clickFileNode(page, 'notes')
-    await clickFileNode(page, 'notes/secret.md.age')
+    await clickFileByName(page, 'secret.md')
 
     await expect(page.getByTestId('decrypt-error-title')).toBeVisible()
     await expect(page.getByTestId('decrypt-error-title')).toHaveText(
       'Cannot Decrypt File'
     )
-    await expect(page.getByTestId('decrypt-error-description')).toContainText(
-      'notes/secret.md.age'
-    )
+    // The dialog names the stored path, which sits in the `notes` folder.
+    await expect(page.getByTestId('decrypt-error-description')).toContainText('notes/')
 
     // A wrong alternative password reports an error.
     await submitPassword(page, 'decrypt-error', 'still-wrong')
@@ -62,7 +65,7 @@ test.describe('File decryption', () => {
     // The file's real password decrypts it and remembers it.
     await submitPassword(page, 'decrypt-error', 'different-password')
     await expect(page.getByTestId('decrypt-error-title')).toBeHidden()
-    await expectEditor(page, 'notes/secret.md.age', /Secret Notes/)
+    await expectEditor(page, 'notes/secret.md', /Secret Notes/)
     await expect(page.getByTestId('notice')).toHaveAttribute('data-notice-type', 'success')
     await expect(page.getByTestId('notice')).toContainText('alternative password')
     // Repository stays unlocked.

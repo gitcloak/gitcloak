@@ -38,6 +38,7 @@ import {
   SidebarSeparator,
   useSidebar,
 } from '@/components/ui/sidebar'
+import type { FilenameKey } from '@/lib/filenames'
 import { cn } from '@/lib/utils'
 
 import { FileTree } from './file-tree'
@@ -109,6 +110,8 @@ interface AppSidebarProps {
   onLockRepo?: () => void
   onOpenSettings?: () => void
   repoStatus?: RepoStatus
+  /** Present while the selected repository is unlocked; file names are decrypted with it. */
+  filenameKey?: FilenameKey | null
   selectedFilePath?: string
 }
 
@@ -124,6 +127,7 @@ export function AppSidebar({
   onLockRepo,
   onOpenSettings,
   repoStatus = 'checking',
+  filenameKey = null,
   selectedFilePath,
 }: AppSidebarProps) {
   const isRepoUnlocked = repoStatus === 'unlocked'
@@ -303,6 +307,7 @@ export function AppSidebar({
               <FileTree
                 owner={selectedRepo.owner}
                 repo={selectedRepo.name}
+                filenameKey={filenameKey}
                 onFileSelect={(path, sha) => {
                   onFileSelect?.(selectedRepo.owner, selectedRepo.name, path, sha)
                 }}

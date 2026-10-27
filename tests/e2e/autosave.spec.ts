@@ -4,13 +4,16 @@ import {
   expect,
   gotoApp,
   clickFileNode,
+  clickFileByName,
   expectEditor,
+  storedPathOf,
   submitPassword,
   fetchMockState,
 } from './helpers'
 
 const REPO = 'mockuser/demo-notes'
-const FILE = 'welcome.md.age'
+// Shown once unlocked. The file is stored under an encrypted name.
+const FILE = 'welcome.md'
 const PASSWORD = 'demo-password'
 const EDITED = '# Welcome\n\nAutosaved while typing.\n'
 // Longer than AUTOSAVE_DELAY_MS in editor-area.tsx, with margin for the UI.
@@ -35,13 +38,15 @@ async function unlockRepo(page: Page): Promise<void> {
     'data-repo-status',
     'unlocked'
   )
+  // Unlocking renames old file names; wait until that has finished.
+  await expect(page.getByTestId('notice')).toContainText('is now unlocked')
 }
 
 test.describe('Autosave', () => {
   test('is off by default and leaves edits unsaved', async ({ page }) => {
     await gotoApp(page)
     await unlockRepo(page)
-    await clickFileNode(page, FILE)
+    await clickFileByName(page, FILE)
     await expectEditor(page, FILE)
 
     await page.getByTestId('editor-input').fill(EDITED)
@@ -60,9 +65,10 @@ test.describe('Autosave', () => {
     await setAutosave(page, true)
     await unlockRepo(page)
 
-    await clickFileNode(page, FILE)
+    await clickFileByName(page, FILE)
     await expectEditor(page, FILE)
-    const before = (await fetchMockState(request))[REPO][FILE]
+    const storedPath = await storedPathOf(page, FILE)
+    const before = (await fetchMockState(request))[REPO][storedPath]
 
     await page.getByTestId('editor-input').fill(EDITED)
     await expect(page.getByTestId('autosave-status')).toHaveAttribute('data-state', 'on')
@@ -70,7 +76,7 @@ test.describe('Autosave', () => {
     await expect(page.getByTestId('save-button')).toHaveAttribute('data-state', 'clean')
     await expect(page.getByTestId('notice')).toContainText(`Saved ${FILE}`)
 
-    const after = (await fetchMockState(request))[REPO][FILE]
+    const after = (await fetchMockState(request))[REPO][storedPath]
     expect(after).not.toEqual(before)
     expect(after).toContain('-----BEGIN AGE ENCRYPTED FILE-----')
 
@@ -82,7 +88,7 @@ test.describe('Autosave', () => {
     await page.getByTestId('settings-done').click()
 
     // The autosaved bytes decrypt back to the edited text.
-    await clickFileNode(page, FILE)
+    await clickFileNode(page, storedPath)
     await submitPassword(page, 'unlock', PASSWORD)
     await expectEditor(page, FILE, EDITED)
   })
@@ -105,8 +111,9 @@ test.describe('Autosave', () => {
     await gotoApp(page)
     await setAutosave(page, true)
     await unlockRepo(page)
-    await clickFileNode(page, FILE)
+    await clickFileByName(page, FILE)
     await expectEditor(page, FILE)
+    const storedPath = await storedPathOf(page, FILE)
 
     const editor = page.getByTestId('editor-input')
     await editor.fill('# Welcome\n\nFirst.\n')
@@ -127,7 +134,7 @@ test.describe('Autosave', () => {
     await page.unroute('**/api/repos/*/*/save')
     await page.reload()
     await gotoApp(page)
-    await clickFileNode(page, FILE)
+    await clickFileNode(page, storedPath)
     await submitPassword(page, 'unlock', PASSWORD)
     await expectEditor(page, FILE, '# Welcome\n\nFirst.\nSecond.\n')
     expect(saveRequests).toBeGreaterThanOrEqual(2)
@@ -138,7 +145,7 @@ test.describe('Autosave', () => {
     await setAutosave(page, true)
     await unlockRepo(page)
 
-    await clickFileNode(page, FILE)
+    await clickFileByName(page, FILE)
     await expectEditor(page, FILE)
 
     // Lock with the file still open. Autosave must pause rather than ask for
