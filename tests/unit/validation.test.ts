@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createGitCloakFile } from '@/lib/gitcloak'
 import {
   isSameOrigin,
+  validateAddRepositoryPayload,
   validateMovePayload,
   validateOwnerRepo,
   validatePath,
@@ -120,6 +121,26 @@ describe('validateMovePayload', () => {
     expect(() => validateMovePayload({ from: 'a.age', to: 'a.age', fromSha: SHA })).toThrow(
       'must differ'
     )
+  })
+})
+
+describe('validateAddRepositoryPayload', () => {
+  it('accepts a well-formed owner/repo pair', () => {
+    expect(validateAddRepositoryPayload({ owner: 'octo-cat', repo: 'my.repo' })).toEqual({
+      owner: 'octo-cat',
+      repo: 'my.repo',
+    })
+  })
+
+  it.each([
+    [null],
+    [[]],
+    [{ owner: 'octocat' }],
+    [{ owner: 'octocat', repo: 7 }],
+    [{ owner: '../x', repo: 'repo' }],
+    [{ owner: 'owner', repo: 'a/b' }],
+  ])('rejects %j', (body) => {
+    expect(() => validateAddRepositoryPayload(body)).toThrow()
   })
 })
 

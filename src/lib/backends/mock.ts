@@ -10,6 +10,7 @@ import {
   type DirectoryEntry,
   type FileBackend,
   type MoveFileParams,
+  type RepositoryAccess,
   type RepositorySummary,
   type SaveFileParams,
   type SaveResult,
@@ -148,6 +149,31 @@ const REPO_SEEDS: MockRepoSeed[] = [
   },
 ]
 
+/**
+ * Repositories the mock user could add to the app installation but has not.
+ * Adding one moves it into `repos`, mirroring the real backend.
+ */
+const SELECTABLE_REPO_SEEDS: RepositorySummary[] = [
+  {
+    id: 2001,
+    name: 'team-notes',
+    fullName: 'mockuser/team-notes',
+    owner: 'mockuser',
+    private: true,
+    description: 'Available to add to the app',
+    updatedAt: '2024-06-01T12:00:00.000Z',
+  },
+  {
+    id: 2002,
+    name: 'design-docs',
+    fullName: 'mockuser/design-docs',
+    owner: 'mockuser',
+    private: false,
+    description: null,
+    updatedAt: '2024-06-02T09:00:00.000Z',
+  },
+]
+
 function sha1(content: string): string {
   return createHash('sha1').update(content, 'utf-8').digest('hex')
 }
@@ -161,6 +187,8 @@ class MockFileBackend implements FileBackend {
   readonly kind: BackendKind = 'mock'
 
   private repos: MockRepoState[] | null = null
+  /** Repositories that could still be added to the installation. */
+  private selectable: RepositorySummary[] | null = null
   /** Materialized seed contents, computed once (age encryption is expensive). */
   private snapshot: { summary: RepositorySummary; files: Map<string, string> }[] | null = null
 
@@ -207,6 +235,16 @@ class MockFileBackend implements FileBackend {
 
   async reset(): Promise<void> {
     this.repos = null
+    this.selectable = null
+  }
+
+  private ensureSelectable(): RepositorySummary[] {
+    if (!this.selectable) {
+      this.selectable = SELECTABLE_REPO_SEEDS.map((summary) => ({
+        ...summary,
+      }))
+    }
+    return this.selectable
   }
 
   async listRepositories(): Promise<RepositorySummary[]> {
@@ -217,6 +255,47 @@ class MockFileBackend implements FileBackend {
         (a, b) =>
           new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       )
+  }
+
+  async listRepositoryAccess(): Promise<RepositoryAccess> {
+    return {
+      installation: {
+        id: 1,
+        accountLogin: 'mockuser',
+        accountType: 'User',
+        repositorySelection: 'selected',
+        manageUrl: 'https://github.com/settings/installations/1',
+      },
+      selectable: this.ensureSelectable()
+        .map((summary) => ({ ...summary }))
+        .sort(
+          (a, b) =>
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        ),
+    }
+  }
+
+  async addRepositoryToInstallation(
+    owner: string,
+    repo: string
+  ): Promise<void> {
+    const selectable = this.ensureSelectable()
+    const fullName = `${owner}/${repo}`
+    const index = selectable.findIndex(
+      (candidate) => candidate.fullName === fullName
+    )
+    if (index === -1) {
+      throw new BackendNotFoundError(`Repository ${fullName} not found`)
+    }
+
+    const [found] = selectable.splice(index, 1)
+    const repos = await this.ensureSeeded()
+    if (!repos.some((candidate) => candidate.summary.id === found.id)) {
+      repos.push({
+        summary: { ...found },
+        files: new Map([[`${found.name}.md`, `# ${found.name}\n`]]),
+      })
+    }
   }
 
   async getContents(

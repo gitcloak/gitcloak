@@ -187,6 +187,30 @@ export function validateMovePayload(body: unknown): MovePayload {
   return { from: validFrom, to: validTo, fromSha }
 }
 
+export interface AddRepositoryPayload {
+  owner: string
+  repo: string
+}
+
+/**
+ * Validate a request that extends the GitHub App installation to one more
+ * repository. Both fields are validated with the same rules as the other
+ * routes before they reach GitHub.
+ */
+export function validateAddRepositoryPayload(
+  body: unknown
+): AddRepositoryPayload {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new ValidationError('Invalid request body')
+  }
+  const { owner, repo } = body as Record<string, unknown>
+  if (typeof owner !== 'string' || typeof repo !== 'string') {
+    throw new ValidationError('Missing required fields')
+  }
+  validateOwnerRepo(owner, repo)
+  return { owner, repo }
+}
+
 /**
  * Reject cross-origin browser requests to state-changing routes. Requests
  * without an `Origin` header (non-browser clients) are left to the session

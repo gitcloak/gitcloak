@@ -24,6 +24,33 @@ export interface RepositorySummary {
   updatedAt: string
 }
 
+/**
+ * How a GitHub App installation decides which repositories the app may use:
+ * either every repository the account owns, or an explicit selection.
+ */
+export type RepositorySelection = 'all' | 'selected'
+
+/** The GitHub App installation that currently scopes repository access. */
+export interface InstallationSummary {
+  id: number
+  accountLogin: string
+  accountType: string
+  repositorySelection: RepositorySelection
+  /** GitHub page where the account owner can change the selection. */
+  manageUrl: string
+}
+
+/**
+ * Everything the "Add repositories" flow needs: the installation in effect and
+ * the repositories the user could still add to it.
+ */
+export interface RepositoryAccess {
+  /** null when the app is not installed for the signed-in user. */
+  installation: InstallationSummary | null
+  /** Repositories the user may add to the current selection. */
+  selectable: RepositorySummary[]
+}
+
 export interface DirectoryEntry {
   name: string
   path: string
@@ -119,6 +146,20 @@ export interface FileBackend {
 
   /** Repositories the signed-in user can access. */
   listRepositories(): Promise<RepositorySummary[]>
+
+  /**
+   * The installation that grants repository access plus the repositories that
+   * could be added to it. Used by the "Add repositories" dialog to let a user
+   * extend the selection after the app was installed.
+   */
+  listRepositoryAccess(): Promise<RepositoryAccess>
+
+  /**
+   * Add a repository the user administers to the app installation, so it shows
+   * up in `listRepositories()` from then on. Throws `BackendNotFoundError`
+   * when the repository cannot be found.
+   */
+  addRepositoryToInstallation(owner: string, repo: string): Promise<void>
 
   /** Read a file or list a directory at `path` (empty string = repository root). */
   getContents(owner: string, repo: string, path: string): Promise<ContentsResult>

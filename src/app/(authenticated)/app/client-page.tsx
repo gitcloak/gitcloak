@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { AlertCircle, KeyRound, Lock, ShieldCheck } from 'lucide-react'
 import { AppSidebar, type RepoStatus } from '@/components/app-sidebar'
+import { AddRepositoriesDialog } from '@/components/add-repositories-dialog'
 import { EditorArea } from '@/components/editor-area'
 import { LoadingOverlay } from '@/components/loading-overlay'
 import { PasswordDialog } from '@/components/password-dialog'
@@ -101,12 +102,13 @@ const CLOSED_PASSWORD_DIALOG: PasswordDialogState = {
   onSubmit: () => {},
 }
 
-export function ClientPage({ repositories, userName, userImage, userEmail }: ClientPageProps) {
+export function ClientPage({ repositories: initialRepositories, userName, userImage, userEmail }: ClientPageProps) {
+  const [repositories, setRepositories] = useState<Repository[]>(initialRepositories)
   const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [loadingMessage, setLoadingMessage] = useState('Processing...')
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(
-    repositories.length > 0 ? repositories[0] : null
+    initialRepositories.length > 0 ? initialRepositories[0] : null
   )
   // Store the repository password in memory (per repository)
   const [repoPasswords, setRepoPasswords] = useState<Record<string, string>>({})
@@ -128,6 +130,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   const [fileNameDialog, setFileNameDialog] = useState(false)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [addRepositoriesOpen, setAddRepositoriesOpen] = useState(false)
   const [autosave, setAutosave] = useAutosave()
 
   const repoKey = selectedRepo ? `${selectedRepo.owner}/${selectedRepo.name}` : null
@@ -153,6 +156,26 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   }, [])
 
   const dismissNotice = useCallback(() => setNotice(null), [])
+
+  /**
+   * A repository was added to the GitHub App installation. Show it in the
+   * selector, newest first, and select it so the user lands on it directly.
+   */
+  const handleRepositoryAdded = useCallback(
+    (repo: Repository) => {
+      setRepositories((previous) => {
+        const next = previous.some((candidate) => candidate.id === repo.id)
+          ? previous
+          : [...previous, repo]
+        return [...next].sort(
+          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        )
+      })
+      setSelectedRepo(repo)
+      showNotice('success', `Added ${repo.fullName}.`)
+    },
+    [showNotice]
+  )
 
   // Inspect the selected repository for a `.gitcloak` file so we can show
   // whether it is set up / locked / unlocked.
@@ -692,18 +715,25 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
       />
       <AppSidebar
         repositories={repositories}
+        selectedRepo={selectedRepo}
         userName={userName}
         userImage={userImage}
         userEmail={userEmail}
         onFileSelect={handleFileSelect}
         onNewFile={handleNewFile}
         onRepoChange={setSelectedRepo}
+        onAddRepositories={() => setAddRepositoriesOpen(true)}
         onUnlockRepo={handleUnlockRepo}
         onLockRepo={handleLockRepo}
         onOpenSettings={() => setSettingsOpen(true)}
         repoStatus={repoStatus}
         filenameKey={filenameKey}
         selectedFilePath={selectedFile?.path}
+      />
+      <AddRepositoriesDialog
+        open={addRepositoriesOpen}
+        onOpenChange={setAddRepositoriesOpen}
+        onAdded={handleRepositoryAdded}
       />
       <SettingsDialog
         open={settingsOpen}

@@ -14,6 +14,7 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 - **Zero Knowledge**: Your encryption password is stored only in browser memory, never transmitted
 - **GitHub Native**: Encrypted files are stored directly in your GitHub repositories
 - **Repository-Level Passwords**: Each repository has its own encryption password
+- **Extend Repository Access**: Already authorized GitCloak? Add more repositories to it later from the repository dropdown, without reinstalling the app
 - **Password Verification**: Secure password verification without storing the password
 - **Interoperable**: Uses age format - decrypt your files anywhere with age-compatible tools
 - **Real-time Editing**: Edit files with live status updates and background saving
@@ -166,6 +167,15 @@ GitCloak is a standard Next.js application and can be deployed to any platform t
 
 - **Lock**: Click the "Lock" button to clear the password from memory
 - **Unlock**: Click the "Unlock" button to enter the password and keep it in memory
+
+### Adding More Repositories
+
+Asked for more repositories than you selected during installation? Open the
+repository dropdown and choose **Add repositories…**. The dialog lists
+repositories you can make available and adds the one you pick to the app.
+If a repository you expect is missing (a GitHub App token only sees
+repositories both you and the app can access), use **Manage repository access
+on GitHub** in the same dialog, select it there, then reopen the dialog.
 
 ## Project Structure
 
@@ -339,11 +349,12 @@ This project is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 - **Password Storage**: Passwords are never sent to servers or stored on disk
 - **HTTPS Required**: Always use HTTPS in production to prevent MITM attacks
 - **Browser Security**: Keep your browser up to date
-- **Repository Access**: GitCloak requires GitHub OAuth permissions to read and write files
+- **Repository Access**: GitCloak uses a GitHub App; its permissions are Contents (read/write), Metadata (read) and GitHub App installation repository access (write), the last only so you can add more repositories to the app from inside GitCloak
 
 ## Roadmap
 
 - [x] Markdown live preview while editing (rendered as you type)
+- [x] Extend the repository selection after installing the GitHub App
 - [ ] File search functionality
 - [ ] Multiple file selection
 - [ ] File and folder creation via UI

@@ -26,7 +26,8 @@ protected (state this honestly in docs and UI, never claim "zero knowledge"):
 the number of entries and the depth of the directory tree, file sizes, commit
 messages (they contain the stored names), commit timing, names of entries
 created before encrypted names, and the set of repositories the user installed
-the app on.
+the app on (which the user can still extend from inside GitCloak — that
+changes *which* repositories are covered, never what is visible inside them).
 
 ## 2. Trust boundaries
 
@@ -53,6 +54,8 @@ reason.
 src/
   app/                    Routes only. Thin: auth check -> validate -> call backend -> shape response.
     api/repos/[owner]/[repo]/{contents,save,move}/route.ts   The only data API.
+    api/repos/available/                                 Candidate repositories for the "Add repositories" flow.
+    api/repos/add/                                       Extends the app installation to one more repository.
     api/auth/[...nextauth]/                              Auth.js handlers (+ mock shim for e2e).
     api/setup/                                           GitHub App post-install redirect.
     api/test/*                                           Mock-only; 404 unless FILE_BACKEND=mock.
@@ -65,6 +68,7 @@ src/
     filenames.ts          Encrypted file and folder names, browser-side. Keys come from a secret wrapped in .gitcloak.
     name-migration.ts     Upgrades old repositories to encrypted names on unlock (browser-side).
     validation.ts         Input validation and same-origin check for routes. Server-side.
+    github-urls.ts        github.com links (app install page, installation settings). Pure; no API calls.
     session.ts            getSession(): the ONLY way server code obtains the user/token.
     access-token.ts       Decrypts the GitHub token from the session cookie (server-only).
     auth-callbacks.ts     Auth.js jwt/session callbacks; tokens go in the JWT, never the session.
@@ -103,7 +107,7 @@ Each has a test or a check. If you change code that touches one, prove it still 
 9. Errors returned to clients are fixed strings (or validation messages we wrote). Log details server-side with `console.error`, never return `error.message` from Octokit or the runtime.
 10. Never log tokens, token prefixes, cookies, request bodies or file content. Auth.js `debug` stays development-only.
 11. The GitHub access/refresh tokens exist only inside the encrypted, httpOnly Auth.js JWT cookie and in server memory. They must never appear on the object returned by `/api/auth/session` (the `session` callback in `lib/auth-callbacks.ts` copies identity only), in props passed to client components, or in any API response. Server code obtains the token through `getSession()`, which uses `readAccessToken()`. `session.ts` and the git backend import `server-only` so a client import fails the build. `tests/unit/access-token.test.ts` and `mock-auth.spec.ts` assert this.
-12. GitHub access is through the GitHub App user-to-server token, which GitHub limits to repositories the user installed the app on. Keep the app's permissions minimal (Contents: read/write; Metadata: read). Do not request OAuth scopes or switch to a broad personal-access-token style.
+12. GitHub access is through the GitHub App user-to-server token, which GitHub limits to repositories the user installed the app on. Keep the app's permissions minimal: Contents (read/write), Metadata (read), plus **`installation_repositories` (write)** so the user can extend the installation later (`PUT /user/installations/{id}/repositories/{repo_id}` from the "Add repositories" dialog). `installation_repositories:write` only lets the *user* add repositories they administer; it does not broaden what the app can read, does not let it touch repositories that are not selected, and the user must be an admin on any repository they add. Do not request OAuth scopes or switch to a broad personal-access-token style.
 13. Mock mode (`FILE_BACKEND=mock`) replaces authentication with a fixed user and must be impossible in a deployment. It is enforced three ways: (a) `next.config.ts` refuses to build it for production on Vercel, or locally without `ALLOW_MOCK_BACKEND=1`; (b) all mock code (`backends/mock`, `mock-session`, `mock-auth-handler`, `/api/test/*` bodies) is loaded with `import()` behind the build-time constant `process.env.NEXT_PUBLIC_MOCK_BACKEND === '1'`, so a normal production bundle does not contain it; (c) `getBackendKind()` throws if mock is requested in a production runtime that was not built for it, or on Vercel, so a stray env var fails closed with a 500, not an open app. Keep the literal constant in the condition (webpack can only drop the dead branch if it sees it) and never import mock modules statically.
 
 **Browser hardening**
@@ -207,5 +211,6 @@ Do not paper over these; fix them or consciously carry them. Remove an item when
 7. **Nonce-based CSP.** `script-src` still allows `'unsafe-inline'`. Move to per-request nonces (middleware) when feasible.
 8. **CI gaps.** CI (lint, unit, build, e2e), Dependabot, CodeQL and `SECURITY.md` exist. Still missing: an `npm audit --omit=dev` step and the "no mock code in the production bundle" grep from section 8 in CI.
 9. **Dead code.** `lib/github.ts` and `lib/github-app.ts` are unused; delete them rather than extend them.
-10. **Pagination.** `listRepositories` reads only the first 100 repos.
+10. **Pagination.** `listRepositories` and the candidate list in `listRepositoryAccess` read only the first 100 repos.
 11. **Metadata leakage.** File names are encrypted (invariant 17), and `.age` files saved before that are renamed on unlock. Still visible: folder names and plain (non-`.age`) files, because renaming a folder moves everything inside it, code included, so that needs its own design. Also visible: commit messages (they contain the stored names; consider a generic message setting), entry counts, tree depth, and sizes.
+12. **Candidate enumeration in "Add repositories".** A GitHub App user token can only see repositories both the user and the app can access, so `/user/repos` may not list private repositories that are not yet in the installation. The dialog always offers a link to GitHub's installation settings page, which is authoritative; do not promise an exhaustive in-app list until this is resolved (e.g. by asking the user to name the repository and resolving its id another way).

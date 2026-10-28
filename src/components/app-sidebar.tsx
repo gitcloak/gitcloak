@@ -100,12 +100,15 @@ interface Repository {
 
 interface AppSidebarProps {
   repositories: Repository[]
+  /** Currently selected repository, owned by the page so additions can select it. */
+  selectedRepo?: Repository | null
   userName: string
   userImage?: string
   userEmail?: string
   onFileSelect?: (owner: string, repo: string, path: string, sha: string) => void
   onNewFile?: () => void
   onRepoChange?: (repo: Repository | null) => void
+  onAddRepositories?: () => void
   onUnlockRepo?: () => void
   onLockRepo?: () => void
   onOpenSettings?: () => void
@@ -117,12 +120,14 @@ interface AppSidebarProps {
 
 export function AppSidebar({
   repositories,
+  selectedRepo = null,
   userName,
   userImage,
   userEmail,
   onFileSelect,
   onNewFile,
   onRepoChange,
+  onAddRepositories,
   onUnlockRepo,
   onLockRepo,
   onOpenSettings,
@@ -132,14 +137,10 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const isRepoUnlocked = repoStatus === 'unlocked'
   const { isMobile, setOpenMobile } = useSidebar()
-  const [selectedRepo, setSelectedRepo] = useState<Repository | null>(
-    repositories.length > 0 ? repositories[0] : null
-  )
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
 
   const handleRepoChange = (repo: Repository) => {
-    setSelectedRepo(repo)
     onRepoChange?.(repo)
   }
 
@@ -240,6 +241,14 @@ export function AppSidebar({
                   <span className="truncate">{repo.fullName}</span>
                 </DropdownMenuItem>
               ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                data-testid="add-repositories-button"
+                onSelect={() => onAddRepositories?.()}
+              >
+                <Plus className="size-4 shrink-0" />
+                <span className="truncate">Add repositories…</span>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
