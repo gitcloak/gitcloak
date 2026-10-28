@@ -55,6 +55,7 @@ src/
     api/repos/[owner]/[repo]/{contents,save,move}/route.ts   The only data API.
     api/auth/[...nextauth]/                              Auth.js handlers (+ mock shim for e2e).
     api/setup/                                           GitHub App post-install redirect.
+    api/session/end/                                     Clears a session GitHub rejected; returns to the landing page.
     api/test/*                                           Mock-only; 404 unless FILE_BACKEND=mock.
     (authenticated)/app/                                 Server layout guards the page; client-page.tsx holds UI state.
   components/             UI. No fetch to anything but our own /api. No secrets in props that leave the client.
@@ -69,11 +70,14 @@ src/
     validation.ts         Input validation and same-origin check for routes. Server-side.
     session.ts            getSession(): the ONLY way server code obtains the user/token.
     access-token.ts       Decrypts the GitHub token from the session cookie (server-only).
+    token-refresh.ts      Refreshes the GitHub token via the OAuth refresh grant.
+    session-refresh.ts    Re-encrypts the session cookie with the rotated tokens.
     auth-callbacks.ts     Auth.js jwt/session callbacks; tokens go in the JWT, never the session.
     mock-*.ts             Test-only (session, auth handler). Loaded only behind the mock build flag.
     backends/             FileBackend interface + git (GitHub) and mock implementations.
     github.ts, github-app.ts   Legacy; unused. Do not build on them (see section 9).
   auth.ts                 Auth.js config.
+  middleware.ts           Refreshes the GitHub token near expiry on /app and /api/repos. Does not gate access.
 next.config.ts            Security headers / CSP.
 tests/unit, tests/e2e     Vitest and Playwright (mock backend, no network).
 ```
@@ -200,14 +204,13 @@ Load the built app in a browser and confirm there are no CSP violations in the c
 
 Do not paper over these; fix them or consciously carry them. Remove an item when it ships.
 
-1. **Token refresh.** GitHub App user tokens expire (about 8 hours) and there is no refresh handling, so users are sent back through sign-in. Refresh server-side in the `jwt` callback using `refreshToken`/`expiresAt`; this also shortens the useful life of any leaked token.
-2. **Rate limiting.** There is no per-user limit on `/api/repos/**` (needs an external store, see section 6).
-3. **No password strength rules.** Ciphertext is public in public repos, so password quality is the main defence. Enforce a minimum length/zxcvbn score on "Set Repository Password" and recommend passphrases.
-4. **`.gitcloak` is unauthenticated.** A collaborator with write access can replace it. Warn when it changes (e.g. pin a fingerprint client-side) and document that write access to the repo is a trust boundary.
-5. **First-save race.** `.gitcloak` is created with no `sha`; concurrent first saves can overwrite each other, and a failed second step leaves an initialised repo with no files. Use a create-only write and handle 422 explicitly.
-6. **No rotation.** Changing the repository password needs a re-encrypt flow; old commits remain decryptable with the old password. Document this limit.
-7. **Nonce-based CSP.** `script-src` still allows `'unsafe-inline'`. Move to per-request nonces (middleware) when feasible.
-8. **CI gaps.** CI (lint, unit, build, e2e), Dependabot, CodeQL and `SECURITY.md` exist. Still missing: an `npm audit --omit=dev` step and the "no mock code in the production bundle" grep from section 8 in CI.
-9. **Dead code.** `lib/github.ts` and `lib/github-app.ts` are unused; delete them rather than extend them.
-10. **Pagination.** `listRepositories` reads only the first 100 repos.
-11. **Metadata leakage.** File names are encrypted (invariant 17), and `.age` files saved before that are renamed on unlock. Still visible: folder names and plain (non-`.age`) files, because renaming a folder moves everything inside it, code included, so that needs its own design. Also visible: commit messages (they contain the stored names; consider a generic message setting), entry counts, tree depth, and sizes.
+1. **Rate limiting.** There is no per-user limit on `/api/repos/**` (needs an external store, see section 6).
+2. **No password strength rules.** Ciphertext is public in public repos, so password quality is the main defence. Enforce a minimum length/zxcvbn score on "Set Repository Password" and recommend passphrases.
+3. **`.gitcloak` is unauthenticated.** A collaborator with write access can replace it. Warn when it changes (e.g. pin a fingerprint client-side) and document that write access to the repo is a trust boundary.
+4. **First-save race.** `.gitcloak` is created with no `sha`; concurrent first saves can overwrite each other, and a failed second step leaves an initialised repo with no files. Use a create-only write and handle 422 explicitly.
+5. **No rotation.** Changing the repository password needs a re-encrypt flow; old commits remain decryptable with the old password. Document this limit.
+6. **Nonce-based CSP.** `script-src` still allows `'unsafe-inline'`. Move to per-request nonces (middleware) when feasible.
+7. **CI gaps.** CI (lint, unit, build, e2e), Dependabot, CodeQL and `SECURITY.md` exist. Still missing: an `npm audit --omit=dev` step and the "no mock code in the production bundle" grep from section 8 in CI.
+8. **Dead code.** `lib/github.ts` and `lib/github-app.ts` are unused; delete them rather than extend them.
+9. **Pagination.** `listRepositories` reads only the first 100 repos.
+10. **Metadata leakage.** File names are encrypted (invariant 17), and `.age` files saved before that are renamed on unlock. Still visible: folder names and plain (non-`.age`) files, because renaming a folder moves everything inside it, code included, so that needs its own design. Also visible: commit messages (they contain the stored names; consider a generic message setting), entry counts, tree depth, and sizes.
