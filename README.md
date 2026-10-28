@@ -297,7 +297,7 @@ npm run test:unit        # single run
 npm run test:unit:watch  # watch mode
 ```
 
-These target `src/lib/encryption.ts` (age encrypt/decrypt round trips, armored
+These target `src/lib/age-passphrase.ts` (age encrypt/decrypt round trips, armored
 output, fresh-salt non-determinism, wrong-password and tamper rejection,
 unicode/empty content) and `src/lib/gitcloak.ts` (`.gitcloak` verification file
 creation and password verification). Run everything with `npm test`.
