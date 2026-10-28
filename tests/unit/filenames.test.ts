@@ -40,6 +40,14 @@ describe('filename encryption', () => {
     expect(stored).not.toMatch(/notes|2024|file/)
   })
 
+  it('decrypts a folder path when the last segment is a folder', async () => {
+    const stored = await encryptRepoPath('projects/todo.md', key)
+    const folder = stored.split('/')[0]
+
+    await expect(decryptRepoPath(folder, key, 'dir')).resolves.toBe('projects')
+    await expect(decryptRepoPath(folder, key)).resolves.toBe(folder)
+  })
+
   it('round-trips file, directory and non-ASCII names', async () => {
     const path = 'заметки/файл.md'
     const stored = await encryptRepoPath(path, key)

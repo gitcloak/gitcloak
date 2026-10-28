@@ -1,6 +1,41 @@
-import { getToken } from "next-auth/jwt"
+import { getToken, type JWT } from "next-auth/jwt"
 
-const SECURE_COOKIE = "__Secure-authjs.session-token"
+/**
+ * Auth.js names the session cookie `__Secure-authjs.session-token` over HTTPS
+ * (Vercel production and previews) and `authjs.session-token` over plain HTTP.
+ * The name is also the encryption salt, so both sides must agree on it.
+ */
+export const SESSION_COOKIE = "authjs.session-token"
+export const SECURE_SESSION_COOKIE = "__Secure-authjs.session-token"
+
+export function isSecureSession(headers: Headers): boolean {
+  return (headers.get("cookie") ?? "").includes(SECURE_SESSION_COOKIE)
+}
+
+export function sessionCookieName(headers: Headers): string {
+  return isSecureSession(headers) ? SECURE_SESSION_COOKIE : SESSION_COOKIE
+}
+
+/**
+ * Decrypt the Auth.js session JWT from the cookie. The JWT carries the GitHub
+ * tokens, so callers must not pass it on to the browser.
+ */
+export async function readSessionToken(
+  headers: Headers,
+  secret = process.env.AUTH_SECRET
+): Promise<JWT | undefined> {
+  if (!secret) return undefined
+
+  // Only the cookie is considered (not an `Authorization: Bearer` header).
+  const cookie = headers.get("cookie") ?? ""
+
+  const token = await getToken({
+    req: { headers: new Headers({ cookie }) },
+    secret,
+    secureCookie: isSecureSession(headers),
+  })
+  return token ?? undefined
+}
 
 /**
  * Read the GitHub access token from the Auth.js session cookie.
@@ -13,20 +48,6 @@ export async function readAccessToken(
   headers: Headers,
   secret = process.env.AUTH_SECRET
 ): Promise<string | undefined> {
-  if (!secret) return undefined
-
-  // Only the cookie is considered (not an `Authorization: Bearer` header).
-  const cookie = headers.get("cookie") ?? ""
-
-  // Auth.js names the cookie `__Secure-authjs.session-token` over HTTPS (Vercel
-  // production and previews) and `authjs.session-token` over plain HTTP, and
-  // uses that name as the encryption salt, so pick the one actually present.
-  const secureCookie = cookie.includes(SECURE_COOKIE)
-
-  const token = await getToken({
-    req: { headers: new Headers({ cookie }) },
-    secret,
-    secureCookie,
-  })
+  const token = await readSessionToken(headers, secret)
   return typeof token?.accessToken === "string" ? token.accessToken : undefined
 }

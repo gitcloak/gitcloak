@@ -148,7 +148,7 @@ GitCloak is a standard Next.js application and can be deployed to any platform t
 
 1. Sign in with GitHub
 2. Select a repository from the dropdown
-3. Click the "New" button
+3. Hover over the repository name at the top of the file tree and click the file button (or click the folder button inside a folder to add a file there)
 4. Enter a filename (e.g., \`secrets.md\`)
 5. Type your content
 6. Click "Save Changes"
