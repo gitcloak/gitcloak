@@ -26,9 +26,10 @@ export default async function AppPage() {
 
     // Check if it's a 401 error (expired/invalid token)
     if (err && typeof err === 'object' && 'status' in err && err.status === 401) {
-      // Token is invalid or expired - redirect to sign-in
-      console.log('Token expired or invalid, redirecting to sign-in')
-      redirect('/api/auth/signout?callbackUrl=/api/auth/signin?callbackUrl=/app')
+      // GitHub rejected the token and the refresh did not recover it. End the
+      // session and show the landing page's sign-in, not the sign-out prompt.
+      console.log('Token expired or invalid, ending session')
+      redirect('/api/session/end')
     }
 
     error = err instanceof Error ? err.message : 'Failed to load repositories'

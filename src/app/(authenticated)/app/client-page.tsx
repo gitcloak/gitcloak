@@ -12,7 +12,7 @@ import { SettingsDialog } from '@/components/settings-dialog'
 import { SidebarInset } from '@/components/ui/sidebar'
 import { useAutosave } from '@/hooks/use-autosave'
 import { useDisplayPath } from '@/hooks/use-display-path'
-import { encryptRepoPath, validateFilePath, type FilenameKey } from '@/lib/filenames'
+import { encryptRepoPath, FOLDER_PLACEHOLDER, validateFilePath, type FilenameKey } from '@/lib/filenames'
 import type { NameMigration } from '@/lib/name-migration'
 
 interface Repository {
@@ -124,8 +124,9 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   // Password dialog state (unlock / decrypt / set password / save password)
   const [passwordDialog, setPasswordDialog] = useState<PasswordDialogState>(CLOSED_PASSWORD_DIALOG)
 
-  // File name input dialog state
-  const [fileNameDialog, setFileNameDialog] = useState(false)
+  // Name prompt for a new file or folder. `parent` is the plain path of the
+  // folder it goes in, or '' for the repository root.
+  const [createDialog, setCreateDialog] = useState<{ kind: 'file' | 'folder'; parent: string } | null>(null)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [autosave, setAutosave] = useAutosave()
@@ -465,27 +466,95 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     showNotice('info', `${key} is now locked. Password removed from memory.`)
   }
 
-  const handleNewFile = () => {
+  const handleCreateEntry = (kind: 'file' | 'folder', parent: string) => {
     if (!selectedRepo) {
       showNotice('error', 'Select a repository first.')
       return
     }
 
-    setFileNameDialog(true)
+    setCreateDialog({ kind, parent })
   }
 
-  const handleFileNameSubmit = (fileName: string) => {
+  /**
+   * Create an empty folder. Git cannot store one, so the folder gets an
+   * encrypted placeholder file, which the tree hides. The placeholder needs the
+   * repository password, so the repository must be unlocked.
+   */
+  const handleCreateFolder = async (folderPath: string) => {
     if (!selectedRepo) return
 
-    const problem = validateFilePath(fileName)
+    const key = `${selectedRepo.owner}/${selectedRepo.name}`
+    const password = repoPasswords[key]
+    if (!password) {
+      showNotice('error', 'Unlock the repository to create a folder.')
+      return
+    }
+
+    setLoadingMessage('Creating folder...')
+    setIsLoading(true)
+    try {
+      const { encryptWithPassword } = await import('@/lib/encryption')
+      const placeholderPath = `${folderPath}/${FOLDER_PLACEHOLDER}`
+      const nameKey = filenameKeys[key] ?? null
+      const savePath = nameKey
+        ? await encryptRepoPath(placeholderPath, nameKey)
+        : `${placeholderPath}.age`
+      const content = await encryptWithPassword('', password)
+
+      const response = await fetch(
+        `/api/repos/${selectedRepo.owner}/${selectedRepo.name}/save`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            path: savePath,
+            content,
+            message: `Create ${savePath}`,
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to create folder')
+      }
+
+      showNotice('success', `Created folder ${folderPath}`)
+      window.__fileTreeRefresh?.()
+    } catch (error) {
+      console.error('Error creating folder:', error)
+      showNotice(
+        'error',
+        `Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`
+      )
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleCreateSubmit = (name: string) => {
+    if (!selectedRepo || !createDialog) return
+
+    const path = createDialog.parent ? `${createDialog.parent}/${name}` : name
+    let problem = validateFilePath(path)
+    if (!problem && path.split('/').pop() === FOLDER_PLACEHOLDER) {
+      problem = `${FOLDER_PLACEHOLDER} is reserved for empty folders.`
+    }
     if (problem) {
       showNotice('error', problem)
       return
     }
 
+    if (createDialog.kind === 'folder') {
+      void handleCreateFolder(path)
+      return
+    }
+
     // Create new file in memory
     setSelectedFile({
-      path: fileName,
+      path,
       content: '',
       sha: '', // Empty sha for new files
       owner: selectedRepo.owner,
@@ -666,6 +735,17 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     }
   }
 
+  const createKind = createDialog?.kind ?? 'file'
+  const createParent = createDialog?.parent ?? ''
+  const createDescription =
+    createKind === 'folder'
+      ? createParent
+        ? `The folder is created in ${createParent}.`
+        : 'Enter the folder name (e.g., folder/subfolder).'
+      : createParent
+        ? `The file is created in ${createParent}.`
+        : 'Enter the file name (e.g., folder/file.md).'
+
   return (
     <>
       {isLoading && <LoadingOverlay message={loadingMessage} />}
@@ -682,13 +762,15 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         onSubmit={passwordDialog.onSubmit}
       />
       <InputDialog
-        open={fileNameDialog}
-        onOpenChange={setFileNameDialog}
-        title="Create New File"
-        description="Enter the file name (e.g., folder/file.md)"
-        label="File name"
-        placeholder="folder/file.md"
-        onSubmit={handleFileNameSubmit}
+        open={createDialog !== null}
+        onOpenChange={(open) => {
+          if (!open) setCreateDialog(null)
+        }}
+        title={createKind === 'folder' ? 'Create New Folder' : 'Create New File'}
+        description={createDescription}
+        label={createKind === 'folder' ? 'Folder name' : 'File name'}
+        placeholder={createKind === 'folder' ? 'folder' : createParent ? 'file.md' : 'folder/file.md'}
+        onSubmit={handleCreateSubmit}
       />
       <AppSidebar
         repositories={repositories}
@@ -696,7 +778,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         userImage={userImage}
         userEmail={userEmail}
         onFileSelect={handleFileSelect}
-        onNewFile={handleNewFile}
+        onCreateEntry={handleCreateEntry}
         onRepoChange={setSelectedRepo}
         onUnlockRepo={handleUnlockRepo}
         onLockRepo={handleLockRepo}

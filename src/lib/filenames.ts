@@ -26,6 +26,12 @@ const TAG_BYTES = 16
 const FILE_EXTENSION = '.age'
 /** Length of the random secret in bytes, before it is hex-encoded. */
 const SECRET_BYTES = 32
+
+/**
+ * Plaintext name of the empty file that keeps a new folder in the repository,
+ * since git cannot store an empty directory. It is hidden from the file tree.
+ */
+export const FOLDER_PLACEHOLDER = '.gitkeep'
 /**
  * Plaintext limit per path segment in bytes. The stored segment is about 1.6x
  * longer plus the extension, which keeps it under GitHub's 255-byte limit.
@@ -149,12 +155,17 @@ export async function encryptRepoPath(path: string, key: FilenameKey): Promise<s
 /**
  * Plaintext path for a stored repository path. Each segment is decrypted on
  * its own, so a path that mixes encrypted and plain segments still reads well.
+ * `lastType` says whether the final segment is a file (the default) or a folder.
  */
-export async function decryptRepoPath(path: string, key: FilenameKey): Promise<string> {
+export async function decryptRepoPath(
+  path: string,
+  key: FilenameKey,
+  lastType: 'file' | 'dir' = 'file'
+): Promise<string> {
   const segments = path.split('/')
   const plain: string[] = []
   for (const [index, segment] of segments.entries()) {
-    const type = index === segments.length - 1 ? 'file' : 'dir'
+    const type = index === segments.length - 1 ? lastType : 'dir'
     plain.push(await decryptEntryName(segment, type, key))
   }
   return plain.join('/')
