@@ -9,7 +9,6 @@ import {
   Lock,
   LockOpen,
   LogOut,
-  Plus,
   RefreshCw,
   Settings,
   ShieldCheck,
@@ -104,7 +103,7 @@ interface AppSidebarProps {
   userImage?: string
   userEmail?: string
   onFileSelect?: (owner: string, repo: string, path: string, sha: string) => void
-  onNewFile?: () => void
+  onCreateEntry?: (kind: 'file' | 'folder', parentPath: string) => void
   onRepoChange?: (repo: Repository | null) => void
   onUnlockRepo?: () => void
   onLockRepo?: () => void
@@ -121,7 +120,7 @@ export function AppSidebar({
   userImage,
   userEmail,
   onFileSelect,
-  onNewFile,
+  onCreateEntry,
   onRepoChange,
   onUnlockRepo,
   onLockRepo,
@@ -288,16 +287,6 @@ export function AppSidebar({
                     className={cn('size-3.5', isRefreshing && 'animate-spin')}
                   />
                 </Button>
-                <Button
-                  data-testid="new-file-button"
-                  onClick={onNewFile}
-                  variant="ghost"
-                  size="xs"
-                  title="Create new file"
-                >
-                  <Plus className="size-3.5" />
-                  New
-                </Button>
               </span>
             )}
           </SidebarGroupLabel>
@@ -305,9 +294,13 @@ export function AppSidebar({
           <SidebarGroupContent className="min-h-0 flex-1 overflow-y-auto">
             {selectedRepo ? (
               <FileTree
+                // A new tree for each repository, so no folder state carries over.
+                key={selectedRepo.fullName}
                 owner={selectedRepo.owner}
                 repo={selectedRepo.name}
                 filenameKey={filenameKey}
+                isUnlocked={isRepoUnlocked}
+                onCreateEntry={onCreateEntry}
                 onFileSelect={(path, sha) => {
                   onFileSelect?.(selectedRepo.owner, selectedRepo.name, path, sha)
                 }}
