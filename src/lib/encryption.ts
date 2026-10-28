@@ -1,58 +1,90 @@
-import { Encrypter, Decrypter, armor } from 'age-encryption'
+import type { EncryptionRequest, EncryptionResponse } from './encryption-worker'
 
 /**
- * Yield control to the browser to prevent UI freezing
+ * Browser API for the age passphrase helpers. The scrypt work runs in a Web
+ * Worker (`encryption-worker.ts`), so a slow unlock, save or decrypt never
+ * blocks the page: the loading spinner keeps animating while it runs.
  */
-function yieldToMain(): Promise<void> {
-  return new Promise(resolve => {
-    setTimeout(resolve, 0)
+
+interface PendingRequest {
+  resolve: (result: string) => void
+  reject: (error: Error) => void
+}
+
+let worker: Worker | null = null
+let nextRequestId = 0
+const pending = new Map<number, PendingRequest>()
+
+function getWorker(): Worker {
+  if (worker) return worker
+
+  const created = new Worker(new URL('./encryption-worker.ts', import.meta.url), { type: 'module' })
+  created.onmessage = (event: MessageEvent<EncryptionResponse>) => {
+    const response = event.data
+    const request = pending.get(response.id)
+    if (!request) return
+    pending.delete(response.id)
+    if (response.ok) {
+      request.resolve(response.result)
+    } else {
+      request.reject(new Error(response.error))
+    }
+  }
+  created.onerror = () => {
+    // A crashed worker loses every request in flight. Drop it so the next call starts a fresh one.
+    for (const request of pending.values()) {
+      request.reject(new Error('Encryption worker failed'))
+    }
+    pending.clear()
+    created.terminate()
+    worker = null
+  }
+
+  worker = created
+  return created
+}
+
+function runInWorker(op: EncryptionRequest['op'], content: string, password: string): Promise<string> {
+  const target = getWorker()
+  const id = ++nextRequestId
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve, reject })
+    const request: EncryptionRequest = { id, op, content, password }
+    target.postMessage(request)
   })
 }
 
 /**
+ * Only for runtimes without Web Workers (unit tests under node). Browsers always
+ * take the worker path above.
+ */
+async function runInline(op: EncryptionRequest['op'], content: string, password: string): Promise<string> {
+  const core = await import('./age-passphrase')
+  return op === 'encrypt'
+    ? core.encryptPassphrase(content, password)
+    : core.decryptPassphrase(content, password)
+}
+
+function run(op: EncryptionRequest['op'], content: string, password: string): Promise<string> {
+  return typeof Worker === 'undefined' ? runInline(op, content, password) : runInWorker(op, content, password)
+}
+
+/**
  * Encrypt content using age encryption with a password
- * Uses yieldToMain to keep UI responsive during computation
  * @param content The content to encrypt
  * @param password The password to use for encryption
  * @returns ASCII armored encrypted content
  */
-export async function encryptWithPassword(content: string, password: string): Promise<string> {
-  // Yield to browser before heavy computation
-  await yieldToMain()
-
-  const encrypter = new Encrypter()
-  encrypter.setPassphrase(password)
-
-  const encrypted = await encrypter.encrypt(content)
-
-  // Yield again before armoring
-  await yieldToMain()
-
-  // Return ASCII armored format (text-based)
-  const armored = armor.encode(encrypted)
-  return armored
+export function encryptWithPassword(content: string, password: string): Promise<string> {
+  return run('encrypt', content, password)
 }
 
 /**
  * Decrypt content using age encryption with a password
- * Uses yieldToMain to keep UI responsive during computation
  * @param encryptedContent The encrypted content (age armored format)
  * @param password The password to use for decryption
  * @returns Decrypted content as string
  */
-export async function decryptWithPassword(encryptedContent: string, password: string): Promise<string> {
-  // Yield to browser before heavy computation
-  await yieldToMain()
-
-  const decrypter = new Decrypter()
-  decrypter.addPassphrase(password)
-
-  // Decode the armored format first
-  const decoded = armor.decode(encryptedContent)
-
-  // Yield again before decryption
-  await yieldToMain()
-
-  const decrypted = await decrypter.decrypt(decoded, 'text')
-  return decrypted
+export function decryptWithPassword(encryptedContent: string, password: string): Promise<string> {
+  return run('decrypt', encryptedContent, password)
 }
