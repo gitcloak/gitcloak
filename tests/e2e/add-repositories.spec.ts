@@ -95,4 +95,73 @@ test.describe('Add repositories', () => {
 
     await expect(page.getByTestId('add-repositories-error')).toBeVisible()
   })
+
+  test('re-reads the installation so a repository granted elsewhere appears', async ({
+    page,
+  }) => {
+    // Stand in for the user granting a repository on GitHub's settings page
+    // while the app is open: the refreshed list comes back with one more.
+    const granted = {
+      id: 4321,
+      name: 'granted-on-github',
+      fullName: 'mockuser/granted-on-github',
+      owner: 'mockuser',
+      private: true,
+      description: null,
+      updatedAt: '2099-01-01T00:00:00.000Z',
+    }
+    await page.route(/\/api\/repos$/, async (route) => {
+      const response = await route.fetch()
+      const data = (await response.json()) as { repositories: unknown[] }
+      await route.fulfill({
+        json: { repositories: [...data.repositories, granted] },
+      })
+    })
+
+    await gotoApp(page)
+
+    // Opening the dialog is what re-reads the installation.
+    await page.getByTestId('repo-selector').click()
+    await page.getByTestId('add-repositories-button').click()
+    await expect(page.getByTestId('add-repositories-dialog')).toBeVisible()
+    await page.getByTestId('add-repositories-done').click()
+
+    await page.getByTestId('repo-selector').click()
+    await expect(page.getByTestId('repo-option')).toHaveCount(5)
+    await expect(
+      page.locator('[data-testid="repo-option"][data-repo="mockuser/granted-on-github"]')
+    ).toBeVisible()
+  })
+
+  test('adds a repository by name when GitHub will not enumerate it', async ({
+    page,
+  }) => {
+    await gotoApp(page)
+
+    await page.getByTestId('repo-selector').click()
+    await page.getByTestId('add-repositories-button').click()
+
+    // A name GitHub would never have offered is still usable.
+    await page.getByTestId('add-repo-manual-input').fill('not-a-repository')
+    await page.getByTestId('add-repo-manual-submit').click()
+    await expect(page.getByTestId('add-repositories-error')).toBeVisible()
+
+    await page.getByTestId('add-repo-manual-input').fill('mockuser/team-notes')
+    await page.getByTestId('add-repo-manual-submit').click()
+
+    await expect(page.getByTestId('add-repositories-manual-added')).toHaveText(
+      'Added mockuser/team-notes.'
+    )
+    await expect(page.getByTestId('repo-selector')).toHaveAttribute(
+      'data-repo',
+      'mockuser/team-notes'
+    )
+
+    await page.getByTestId('add-repositories-done').click()
+    await page.getByTestId('repo-selector').click()
+    await expect(page.getByTestId('repo-option')).toHaveCount(5)
+    await expect(
+      page.locator('[data-testid="repo-option"][data-repo="mockuser/team-notes"]')
+    ).toBeVisible()
+  })
 })

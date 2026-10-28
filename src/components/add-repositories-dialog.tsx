@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { appInstallUrl } from "@/lib/github-urls"
 
 /** The subset of a repository this dialog needs to add it. */
@@ -44,26 +45,64 @@ interface AddRepositoriesDialogProps {
   onOpenChange: (open: boolean) => void
   /** Called with the newly granted repository, so the app can show it. */
   onAdded: (repo: Repository) => void
+  /**
+   * Called with the installation's repositories as GitHub has them right now.
+   * The selection can change on GitHub's settings page, which this app
+   * otherwise only notices on a full page load; `selectFullName` asks for one
+   * of them to be selected.
+   */
+  onRepositoriesChanged: (
+    repositories: Repository[],
+    selectFullName?: string
+  ) => void
+}
+
+/**
+ * Parse `owner/repo` out of what the user typed. Accepts a clone URL or a
+ * GitHub URL too, because that is what people paste.
+ */
+function parseFullName(value: string): { owner: string; repo: string } | null {
+  const trimmed = value
+    .trim()
+    .replace(/^https?:\/\/(www\.)?github\.com\//i, "")
+    .replace(/\.git$/i, "")
+    .replace(/^\/+|\/+$/g, "")
+
+  const parts = trimmed.split("/")
+  if (parts.length !== 2) return null
+
+  const [owner, repo] = parts
+  if (!owner || !repo) return null
+  return { owner, repo }
 }
 
 /**
  * Post-install escape hatch: after authorizing GitHub access the user may want
- * to make more repositories available to GitCloak. This dialog lists what can
- * be added and grants access one repository at a time
- * (`PUT /user/installations/{id}/repositories/{repo_id}`), falling back to
- * GitHub's own installation settings page for anything the app cannot see.
+ * to make more repositories available to GitCloak.
+ *
+ * GitHub will only tell a GitHub App user token about repositories the app
+ * already covers, so the enumerated list below is best-effort and often empty.
+ * The authoritative path is GitHub's installation settings page (linked), and
+ * the name field exists so a user is never stuck when GitHub refuses to
+ * enumerate the repository they want.
  */
 export function AddRepositoriesDialog({
   open,
   onOpenChange,
   onAdded,
+  onRepositoriesChanged,
 }: AddRepositoriesDialogProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [installation, setInstallation] = useState<InstallationInfo | null>(null)
+  const [installation, setInstallation] = useState<InstallationInfo | null>(
+    null
+  )
   const [repositories, setRepositories] = useState<Repository[]>([])
   const [addingId, setAddingId] = useState<number | null>(null)
   const [addedIds, setAddedIds] = useState<number[]>([])
+  const [manualName, setManualName] = useState("")
+  const [addingManual, setAddingManual] = useState(false)
+  const [manualAdded, setManualAdded] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -73,52 +112,91 @@ export function AddRepositoriesDialog({
     setError(null)
     setAddedIds([])
     setAddingId(null)
+    setManualName("")
+    setManualAdded(null)
 
     void (async () => {
-      try {
-        const response = await fetch("/api/repos/available")
-        if (!response.ok) {
-          throw new Error("Could not load repositories from GitHub.")
-        }
-        const data = (await response.json()) as RepositoryAccess
-        if (cancelled) return
-        setInstallation(data.installation ?? null)
-        setRepositories(data.selectable ?? [])
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err instanceof Error ? err.message : "Could not load repositories."
-          )
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
+      // Read the installation from GitHub and re-read the repositories it
+      // covers, so a selection changed on GitHub shows up without a reload.
+      const refreshed = fetch("/api/repos")
+        .then((response) =>
+          response.ok
+            ? (response.json() as Promise<{ repositories?: Repository[] }>)
+            : Promise.reject(new Error("refresh failed"))
+        )
+        .then((data) => data.repositories ?? [])
+        .catch(() => null)
+
+      const available = fetch("/api/repos/available")
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error("Could not load repositories from GitHub.")
+          }
+          return (await response.json()) as RepositoryAccess
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) {
+            setError(
+              err instanceof Error ? err.message : "Could not load repositories."
+            )
+          }
+          return null
+        })
+
+      const [granted, access] = await Promise.all([refreshed, available])
+
+      // The parent owns the repository list: applying a refresh that lands
+      // after the dialog closed is useful, not harmful, so it is not gated on
+      // the dialog still being open.
+      if (granted) onRepositoriesChanged(granted)
+      if (cancelled) return
+
+      if (access) {
+        setInstallation(access.installation ?? null)
+        setRepositories(access.selectable ?? [])
       }
+      setLoading(false)
     })()
 
     return () => {
       cancelled = true
     }
-  }, [open])
+  }, [open, onRepositoriesChanged])
+
+  /** POST one repository to the installation, returning the API's message. */
+  const grant = async (owner: string, repo: string): Promise<void> => {
+    const response = await fetch("/api/repos/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ owner, repo }),
+    })
+    if (!response.ok) {
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string
+      }
+      throw new Error(data.error ?? "Failed to add repository.")
+    }
+  }
+
+  /** Re-read the installation and select the repository just granted. */
+  const refreshAndSelect = async (fullName: string) => {
+    try {
+      const response = await fetch("/api/repos")
+      if (!response.ok) return
+      const data = (await response.json()) as { repositories?: Repository[] }
+      onRepositoriesChanged(data.repositories ?? [], fullName)
+    } catch {
+      // The repository is granted either way; it appears on the next load.
+    }
+  }
 
   const handleAdd = async (repo: Repository) => {
     setAddingId(repo.id)
     setError(null)
 
     try {
-      const response = await fetch("/api/repos/add", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner: repo.owner, repo: repo.name }),
-      })
-      if (!response.ok) {
-        const data = (await response.json().catch(() => ({}))) as {
-          error?: string
-        }
-        throw new Error(data.error ?? "Failed to add repository.")
-      }
-      setAddedIds((prev) =>
-        prev.includes(repo.id) ? prev : [...prev, repo.id]
-      )
+      await grant(repo.owner, repo.name)
+      setAddedIds((prev) => (prev.includes(repo.id) ? prev : [...prev, repo.id]))
       onAdded(repo)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add repository.")
@@ -127,10 +205,36 @@ export function AddRepositoriesDialog({
     }
   }
 
+  const handleAddByName = async () => {
+    const parsed = parseFullName(manualName)
+    if (!parsed) {
+      setError("Enter a repository as owner/name, for example octocat/hello-world.")
+      return
+    }
+
+    setAddingManual(true)
+    setError(null)
+    setManualAdded(null)
+
+    try {
+      await grant(parsed.owner, parsed.repo)
+      const fullName = `${parsed.owner}/${parsed.repo}`
+      await refreshAndSelect(fullName)
+      setManualAdded(fullName)
+      setManualName("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add repository.")
+    } finally {
+      setAddingManual(false)
+    }
+  }
+
   const installUrl = appInstallUrl(process.env.NEXT_PUBLIC_GITHUB_APP_NAME)
   const showManageLink = installation !== null
-  const nothingToAdd =
-    !loading && !error && installation !== null && repositories.length === 0
+  const selectedInstallation =
+    installation?.repositorySelection === "selected"
+  const isSelected = !loading && !error && selectedInstallation
+  const nothingToAdd = isSelected && repositories.length === 0
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -215,7 +319,7 @@ export function AddRepositoriesDialog({
 
           {!loading &&
             !error &&
-            installation?.repositorySelection === "selected" &&
+            isSelected &&
             repositories.length > 0 && (
               <ul
                 data-testid="add-repositories-list"
@@ -282,9 +386,64 @@ export function AddRepositoriesDialog({
               data-testid="add-repositories-empty"
               className="text-sm leading-relaxed text-gc-fg-muted"
             >
-              There are no repositories left to add right now. Manage repository
-              access on GitHub to grant more.
+              GitHub is not showing GitCloak any repository left to add — it
+              only reveals repositories the app already covers. Grant one in
+              GitHub&apos;s installation settings (link below); it appears in
+              the repository dropdown as soon as you grant it.
             </p>
+          )}
+
+          {selectedInstallation && (
+            <div className="grid gap-2 border-t border-gc-border pt-3">
+              <label
+                htmlFor="add-repo-manual"
+                className="text-xs font-medium text-gc-fg"
+              >
+                Add a repository by name
+              </label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="add-repo-manual"
+                  data-testid="add-repo-manual-input"
+                  value={manualName}
+                  onChange={(event) => setManualName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void handleAddByName()
+                  }}
+                  placeholder="owner/repository"
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={addingManual}
+                  className="h-8 flex-1 text-sm"
+                />
+                <Button
+                  data-testid="add-repo-manual-submit"
+                  onClick={() => void handleAddByName()}
+                  disabled={addingManual || manualName.trim().length === 0}
+                  variant="outline"
+                  size="sm"
+                >
+                  {addingManual ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="size-3.5" />
+                  )}
+                  Add
+                </Button>
+              </div>
+              <p className="text-xs leading-relaxed text-gc-fg-muted">
+                Use this when GitHub will not list the repository — for example
+                one you created after installing GitCloak.
+              </p>
+              {manualAdded && (
+                <p
+                  data-testid="add-repositories-manual-added"
+                  className="text-xs leading-relaxed text-gc-success-fg"
+                >
+                  Added {manualAdded}.
+                </p>
+              )}
+            </div>
           )}
 
           {showManageLink && (

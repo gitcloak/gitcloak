@@ -42,8 +42,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
-    if (isBackendNotFound(error)) {
-      return NextResponse.json({ error: 'Repository not found' }, { status: 404 })
+    const status = (error as { status?: number })?.status
+
+    // GitHub hides repositories the installation does not cover yet, so a
+    // lookup by name fails with 404 even when the repository exists and the
+    // user can see it in GitHub's own UI.
+    if (isBackendNotFound(error) || status === 404) {
+      return NextResponse.json(
+        {
+          error:
+            "GitHub did not let GitCloak see that repository. Add it in GitHub's installation settings instead.",
+        },
+        { status: 404 }
+      )
+    }
+
+    if (status === 403) {
+      return NextResponse.json(
+        {
+          error:
+            'GitHub refused to add that repository. You need admin access to it.',
+        },
+        { status: 403 }
+      )
     }
 
     console.error('Error adding repository to installation:', error)

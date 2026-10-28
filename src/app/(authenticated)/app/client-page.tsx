@@ -158,6 +158,44 @@ export function ClientPage({ repositories: initialRepositories, userName, userIm
   const dismissNotice = useCallback(() => setNotice(null), [])
 
   /**
+   * Replace the repository list with the installation's repositories as GitHub
+   * has them right now. The selection can change on GitHub's settings page,
+   * outside this app, and the server component only reads it on a page load.
+   *
+   * `selectFullName` requests a specific repository (one the user just granted
+   * by name); otherwise the current selection is kept, and the newest
+   * repository is used when the previous one is gone.
+   */
+  const handleRepositoriesChanged = useCallback(
+    (next: Repository[], selectFullName?: string) => {
+      const sorted = [...next].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      )
+      setRepositories((previous) => {
+        const unchanged =
+          previous.length === sorted.length &&
+          previous.every(
+            (repo, index) =>
+              repo.id === sorted[index].id &&
+              repo.updatedAt === sorted[index].updatedAt
+          )
+        return unchanged ? previous : sorted
+      })
+      setSelectedRepo((current) => {
+        if (selectFullName) {
+          const requested = sorted.find((repo) => repo.fullName === selectFullName)
+          if (requested) return requested
+        }
+        // Keep the same object when the repository is still there, so the
+        // `.gitcloak` check below does not re-run on every refresh.
+        if (current && sorted.some((repo) => repo.id === current.id)) return current
+        return sorted.length > 0 ? sorted[0] : null
+      })
+    },
+    []
+  )
+
+  /**
    * A repository was added to the GitHub App installation. Show it in the
    * selector, newest first, and select it so the user lands on it directly.
    */
@@ -734,6 +772,7 @@ export function ClientPage({ repositories: initialRepositories, userName, userIm
         open={addRepositoriesOpen}
         onOpenChange={setAddRepositoriesOpen}
         onAdded={handleRepositoryAdded}
+        onRepositoriesChanged={handleRepositoriesChanged}
       />
       <SettingsDialog
         open={settingsOpen}
