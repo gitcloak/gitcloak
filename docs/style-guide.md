@@ -210,7 +210,7 @@ buttons. Background `--gc-canvas-subtle` (or `--gc-surface`), bottom hairline.
 | --- | --- | --- |
 | Primary | `bg-gc-success text-white`, flat, hover `bg-gc-success-hover` | Unlock, Save, Create |
 | Secondary / outline | `bg-gc-surface` + 1px `--gc-border`, text `--gc-fg`, hover `bg-gc-canvas` | Cancel |
-| Toolbar icon | 28px tall, `rounded-gc-sm`, 1px border, white, hover `bg-gc-canvas` | Refresh, New |
+| Toolbar icon | 28px tall, `rounded-gc-sm`, 1px border, white, hover `bg-gc-canvas` | Refresh |
 | Destructive text | red text on white (`Lock repository`) | Lock |
 
 All buttons: `h-9` (36px) for forms, `rounded-gc-md`, `font-medium`,

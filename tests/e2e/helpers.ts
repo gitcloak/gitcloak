@@ -51,6 +51,11 @@ export async function selectRepo(page: Page, fullName: string): Promise<void> {
   )
 }
 
+/** The new-file button in the repository row at the top of the file tree. */
+export function rootNewFileButton(page: Page) {
+  return page.locator('[data-testid="tree-new-file-button"][data-path=""]')
+}
+
 /** Click a node in the file tree by its repository-relative path. */
 export async function clickFileNode(page: Page, path: string): Promise<void> {
   await page.locator(`[data-testid="file-node"][data-path="${path}"]`).click()
