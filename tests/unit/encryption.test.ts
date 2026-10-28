@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { decryptWithPassword, encryptWithPassword } from '@/lib/encryption'
+// The age core runs inside the worker in the browser; the unit tests call it directly.
+import { decryptPassphrase as decryptWithPassword, encryptPassphrase as encryptWithPassword } from '@/lib/age-passphrase'
 
 const PASSWORD = 'correct horse battery staple'
 const PLAINTEXT = '# Round trip\n\nThe quick brown fox jumps over the lazy dog.\n'
