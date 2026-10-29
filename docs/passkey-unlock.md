@@ -125,7 +125,7 @@ commit history).
 | Phishing | Passkeys are bound to the origin (the RP ID). A look-alike site cannot ask for the PRF output. This is the main gain over typing the password. |
 | Server | Never sees the PRF output, the wrapping key, the password or the unwrapped data. The only change it stores is ciphertext, through the existing save path. |
 | Browser | The password lives in React state only. The PRF output and the derived key are dropped after use (best effort in JavaScript; no guarantee of memory zeroing). No persistence. |
-| Forged entries (gap 3) | A collaborator with write access cannot add a passkey entry that unwraps to a different password on the victim's authenticator, because they do not have that authenticator's PRF output. Gap 3 still applies to replacing the whole `.gitcloak` file, which is unchanged by this proposal. |
+| Forged entries and whole-file replacement (gap 3) | A collaborator with write access cannot add a passkey entry that unwraps to a different password, because they lack the authenticator's PRF output. But they can replace the whole `.gitcloak`, including `verification` and `passkeys`. That lets them substitute a password they know (new files are then encrypted under it and readable by them), roll back a revoked passkey entry, or break `verification` to lock the user out. Old files stay protected, since they remain encrypted under the original password. Gap 3 is therefore a prerequisite for shipping this feature, not just a tracked item. |
 | Lost authenticator | The password still unlocks. Stale entries can be removed by a normal save. |
 | Revocation | Removing an entry stops future passkey unlocks. It does not revoke a device that has already unwrapped the password. Real revocation is password rotation (gap 5). |
 | XSS | An XSS can already read plaintext, so passkeys add no new risk. User verification still gates each assertion. |
@@ -191,7 +191,9 @@ with a passkey entry that cannot be used on the device that created it.
 3. **PRF required, no fallback to a weaker mechanism.** Recommendation: yes.
    Browsers without PRF see the password flow only.
 4. **Is gap 3 (`.gitcloak` pinning) a prerequisite?** This design does not
-   depend on it, but the whole-file replacement risk it describes still exists.
-   Recommendation: do not block on it, but track it.
+   depend on it at the protocol level, but the whole-file replacement risk
+   applies to `verification` and `passkeys` alike (see §5). Recommendation:
+   treat gap 3 as a prerequisite and ship it before, or in the same release as,
+   passkey unlock.
 5. **Age X25519 wrapping, or the AES-GCM fallback**, once the spike in §3 has
    answered whether the first option works.
