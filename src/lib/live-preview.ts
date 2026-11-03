@@ -1,4 +1,5 @@
 import { syntaxTree } from '@codemirror/language'
+import { StateField } from '@codemirror/state'
 import type { EditorState, Range, Text } from '@codemirror/state'
 import {
   Decoration,
@@ -130,10 +131,59 @@ export class CheckboxWidget extends WidgetType {
 
 // Declared after the widget classes they instantiate.
 const HIDDEN = Decoration.replace({})
+// A whole-line replacement, so the lines it covers collapse instead of leaving
+// the blank lines an inline replacement would.
+const HIDDEN_LINES = Decoration.replace({ block: true })
 const BULLET = Decoration.replace({ widget: new BulletWidget() })
 const CHECKED_BOX = Decoration.replace({ widget: new CheckboxWidget(true) })
 const UNCHECKED_BOX = Decoration.replace({ widget: new CheckboxWidget(false) })
 const RULE = Decoration.replace({ widget: new RuleWidget() })
+
+/**
+ * The range covering a YAML front matter block at the very start of `doc`, or
+ * `null` when there is none. A block opens with a `---` line and closes at the
+ * next `---` or `...` line. The range ends past the closing line's break so the
+ * whole block can be hidden as complete lines.
+ */
+export function frontMatterRange(doc: Text): Span | null {
+  if (doc.line(1).text.trimEnd() !== '---') return null
+  for (let n = 2; n <= doc.lines; n++) {
+    const line = doc.line(n)
+    const text = line.text.trimEnd()
+    if (text === '---' || text === '...') {
+      return { from: 0, to: n < doc.lines ? doc.line(n + 1).from : line.to }
+    }
+  }
+  return null
+}
+
+/**
+ * Decoration that hides the front matter block. It is a whole-line replacement,
+ * which the view only accepts from a state field — never from a plugin — so it
+ * lives in its own field. Leaving `livePreview` out of the editor drops the
+ * field with it, which is what makes the block visible in the source view.
+ */
+function frontMatterDecorations(state: EditorState): DecorationSet {
+  const range = frontMatterRange(state.doc)
+  return range
+    ? Decoration.set([HIDDEN_LINES.range(range.from, range.to)], true)
+    : Decoration.none
+}
+
+export const frontMatterBlock = StateField.define<DecorationSet>({
+  create: frontMatterDecorations,
+  update(set, transaction) {
+    // The block only depends on the document, not on the selection.
+    return transaction.docChanged ? frontMatterDecorations(transaction.state) : set
+  },
+  provide: (field) => [
+    EditorView.decorations.from(field),
+    // `atomicRanges` takes a view callback, not a field, so the block has to be
+    // read out of the state here. It keeps the cursor from landing inside the
+    // hidden block, which would otherwise leave it stuck on an invisible line.
+    EditorView.atomicRanges.of((view) => view.state.field(field)),
+  ],
+})
 
 /** Skips spaces and tabs after `pos`, at most `limit` of them. */
 function skipSpaces(doc: Text, pos: number, limit: number): number {
@@ -160,6 +210,13 @@ export function computeLivePreview(
   const selection = state.selection.ranges
   const decorations: Range<Decoration>[] = []
   const atomicRanges: Range<Decoration>[] = []
+
+  // YAML front matter is metadata, not content: the rendered view hides the
+  // whole block (see `frontMatterBlock`) and it is only read in the source
+  // view. `frontMatter.to` then becomes the start of the syntax scan so nothing
+  // inside it is decorated twice.
+  const frontMatter = frontMatterRange(doc)
+  const scanFrom = frontMatter ? Math.max(from, frontMatter.to) : from
 
   // A span is active when the cursor or any selection touches it, edges
   // included, so a cursor placed right after `**bold**` still shows the marks.
@@ -201,7 +258,7 @@ export function computeLivePreview(
   }
 
   syntaxTree(state).iterate({
-    from,
+    from: scanFrom,
     to,
     enter: (node) => {
       const parent = node.node.parent
@@ -463,7 +520,7 @@ export const editorTheme = EditorView.theme({
  * Renders Markdown. Leave it out to show the raw source instead (see
  * `sourceView`). The styling in `editorTheme` is installed either way.
  */
-export const livePreview = livePreviewPlugin
+export const livePreview = [frontMatterBlock, livePreviewPlugin]
 
 /** Marks the editor as showing raw source, so the source uses a monospace font. */
 export const sourceView = EditorView.editorAttributes.of({ class: 'cm-lp-source' })
