@@ -507,11 +507,15 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     // folder's stored path, so a nested file must be plain there. At the root
     // both are possible — an encrypted file there starts (and asks for) the
     // repository password on save.
+    //
+    // A folder is encrypted — its own name and its placeholder — only while the
+    // repository is unlocked; locked or not set up it is created plainly, which
+    // needs no password, just like a plain file.
     const unlocked = Boolean(
       repoPasswords[`${selectedRepo.owner}/${selectedRepo.name}`]
     )
     const nested = storedParent !== null
-    const encrypted = kind === 'file' ? !nested || unlocked : true
+    const encrypted = kind === 'file' ? !nested || unlocked : unlocked
 
     setCreateDialog({
       kind,
@@ -523,30 +527,45 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   }
 
   /**
-   * Create an empty folder. Git cannot store one, so the folder gets an
-   * encrypted placeholder file, which the tree hides. The placeholder needs the
-   * repository password, so the repository must be unlocked.
+   * Create an empty folder. Git cannot store one, so the folder gets a
+   * placeholder file, which the tree hides. An encrypted folder derives its
+   * stored name — and the placeholder's — from the repository password; a plain
+   * folder is written where it was clicked, under its own name, and needs none.
+   * `plainPlaceholderPath` is that written path, placeholder included.
    */
-  const handleCreateFolder = async (folderPath: string) => {
+  const handleCreateFolder = async (
+    folderPath: string,
+    plainPlaceholderPath: string,
+    encrypted: boolean
+  ) => {
     if (!selectedRepo) return
 
     const key = `${selectedRepo.owner}/${selectedRepo.name}`
     const password = repoPasswords[key]
-    if (!password) {
-      showNotice('error', 'Unlock the repository to create a folder.')
+    if (encrypted && !password) {
+      showNotice('error', 'Unlock the repository to create an encrypted folder.')
       return
     }
 
     setLoadingMessage('Creating folder...')
     setIsLoading(true)
     try {
-      const { encryptWithPassword } = await import('@/lib/encryption')
-      const placeholderPath = `${folderPath}/${FOLDER_PLACEHOLDER}`
-      const nameKey = filenameKeys[key] ?? null
-      const savePath = nameKey
-        ? await encryptRepoPath(placeholderPath, nameKey)
-        : `${placeholderPath}.age`
-      const content = await encryptWithPassword('', password)
+      let savePath: string
+      let body: string
+      if (encrypted) {
+        const { encryptWithPassword } = await import('@/lib/encryption')
+        const placeholderPath = `${folderPath}/${FOLDER_PLACEHOLDER}`
+        const nameKey = filenameKeys[key] ?? null
+        savePath = nameKey
+          ? await encryptRepoPath(placeholderPath, nameKey)
+          : `${placeholderPath}.age`
+        body = await encryptWithPassword('', password as string)
+      } else {
+        // A plain placeholder is a real file, and the server refuses an empty
+        // body, so it carries a newline. It keeps the folder with no password.
+        savePath = plainPlaceholderPath
+        body = '\n'
+      }
 
       const response = await fetch(
         `/api/repos/${selectedRepo.owner}/${selectedRepo.name}/save`,
@@ -557,7 +576,8 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           },
           body: JSON.stringify({
             path: savePath,
-            content,
+            content: body,
+            encrypted,
             message: `Create ${savePath}`,
           }),
         }
@@ -601,7 +621,14 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     }
 
     if (createDialog.kind === 'folder') {
-      void handleCreateFolder(path)
+      // A plain folder is written where the tree showed it — the folder the user
+      // clicked — while an encrypted name is derived from `path`, the plaintext
+      // path. `path` is the folder itself; the placeholder sits inside it.
+      const plainPlaceholderPath =
+        createDialog.storedParent === null
+          ? `${path}/${FOLDER_PLACEHOLDER}`
+          : `${createDialog.storedParent}/${name}/${FOLDER_PLACEHOLDER}`
+      void handleCreateFolder(path, plainPlaceholderPath, createDialog.encrypted)
       return
     }
 
@@ -828,11 +855,20 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   // known; at the root both choices are available. Mirrors the default chosen in
   // `handleCreateEntry`.
   const canEncryptFile = createParent === '' || !createParentIsStored
+  // A folder is created plainly while the repository is locked (or not set up),
+  // because an encrypted name needs the name key. Mirrors `handleCreateEntry`.
+  const createFolderIsPlain = createKind === 'folder' && createDialog?.encrypted === false
   const createDescription =
     createKind === 'folder'
-      ? createParent
-        ? `The folder is created in ${createParent}.`
-        : 'Enter the folder name (e.g., folder/subfolder).'
+      ? `${
+          createParent
+            ? `The folder is created in ${createParent}.`
+            : 'Enter the folder name (e.g., folder/subfolder).'
+        }${
+          createFolderIsPlain
+            ? ' It is stored as a plain folder under its own name, so it needs no password.'
+            : ''
+        }`
       : createParent
         ? `The file is created in ${
             createParentIsStored ? 'the folder you selected' : createParent

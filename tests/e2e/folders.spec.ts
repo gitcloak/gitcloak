@@ -15,20 +15,72 @@ const rootNewFolderButton = (page: Page) =>
   page.locator('[data-testid="tree-new-folder-button"][data-path=""]')
 
 test.describe('Folders in the file tree', () => {
-  test('folder buttons need an unlocked repository, but files can be added anywhere', async ({
-    page,
-  }) => {
+  test('file and folder buttons work without an unlocked repository', async ({ page }) => {
     await gotoApp(page)
 
-    // demo-notes is locked: a folder needs the password to hold its placeholder.
+    // demo-notes is locked, but neither button needs the password: a folder
+    // created now is plain, and a plain file needs nothing either.
     await expect(page.getByTestId('repo-lock-status')).toContainText('Locked')
-    await expect(rootNewFolderButton(page)).toBeDisabled()
+    await expect(rootNewFolderButton(page)).toBeEnabled()
     await expect(rootNewFileButton(page)).toBeEnabled()
-    // A nested file may be plain, which needs no password, so its button is
-    // enabled even while the repository is locked.
+    // The same holds inside a folder, even while the repository is locked.
     await expect(
       page.locator('[data-testid="file-node"][data-name="notes"] [data-testid="tree-new-file-button"]')
     ).toBeEnabled()
+    await expect(
+      page.locator('[data-testid="file-node"][data-name="notes"] [data-testid="tree-new-folder-button"]')
+    ).toBeEnabled()
+  })
+
+  test('creates a plain folder while the repository is locked', async ({ page, request }) => {
+    await gotoApp(page)
+    await expect(page.getByTestId('repo-lock-status')).toContainText('Locked')
+
+    await rootNewFolderButton(page).click()
+    await expect(page.getByTestId('new-file-title')).toHaveText('Create New Folder')
+    // The dialog says so: with no password the folder is stored plainly.
+    await expect(page.getByTestId('new-file-description')).toContainText('plain folder')
+    await page.getByTestId('new-file-input').fill('drafts')
+    await page.getByTestId('new-file-submit').click()
+
+    // No password is asked for, and the folder keeps its own name.
+    await expect(page.getByTestId('notice')).toContainText('Created folder drafts')
+    const files = (await fetchMockState(request))['mockuser/demo-notes']
+    expect(files['drafts/.gitkeep']).toBe('\n')
+    expect(files['drafts/.gitkeep.age']).toBeUndefined()
+    // The repository is still set up, just not unlocked.
+    expect(files['.gitcloak']).toContain('"verification"')
+
+    // It shows as a folder, and its placeholder stays hidden.
+    const folder = page.locator('[data-testid="file-node"][data-name="drafts"]')
+    await expect(folder).toHaveAttribute('data-node-type', 'dir')
+    await folder.click()
+    await expect(page.locator('[data-testid="file-node"][data-name=".gitkeep"]')).toHaveCount(0)
+  })
+
+  test('creates a plain folder in a repository that is not set up', async ({ page, request }) => {
+    await gotoApp(page)
+    await selectRepo(page, 'mockuser/scratch')
+    await expect(page.getByTestId('repo-lock-status')).toHaveAttribute(
+      'data-repo-status',
+      'uninitialized'
+    )
+
+    await rootNewFolderButton(page).click()
+    await expect(page.getByTestId('new-file-description')).toContainText('plain folder')
+    await page.getByTestId('new-file-input').fill('archive')
+    await page.getByTestId('new-file-submit').click()
+
+    await expect(page.getByTestId('notice')).toContainText('Created folder archive')
+    // No password dialog, and the repository stays uninitialized.
+    await expect(page.getByTestId('set-password-title')).toHaveCount(0)
+    const files = (await fetchMockState(request))['mockuser/scratch']
+    expect(files['archive/.gitkeep']).toBe('\n')
+    expect(files['.gitcloak']).toBeUndefined()
+
+    const folder = page.locator('[data-testid="file-node"][data-name="archive"]')
+    await expect(folder).toHaveAttribute('data-node-type', 'dir')
+    await expect(page.locator('[data-testid="file-node"][data-name=".gitkeep"]')).toHaveCount(0)
   })
 
   test('adds a plain file inside a folder while the repository is locked', async ({

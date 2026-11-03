@@ -28,7 +28,7 @@ interface FileTreeProps {
   repo: string
   /** Set while the repository is unlocked. Names are shown decrypted only then. */
   filenameKey?: FilenameKey | null
-  /** Set while the repository is unlocked. Folders can only be added then. */
+  /** Set while the repository is unlocked. A new folder then gets an encrypted name. */
   isUnlocked?: boolean
   onFileSelect?: (path: string, sha: string) => void
   /**
@@ -59,11 +59,15 @@ function sortNodes(nodes: TreeNode[], labelOf: (node: TreeNode) => string): Tree
 
 /**
  * The placeholder that keeps an empty folder in the repository, in either
- * naming scheme. Plain `.gitkeep` files are real files and stay visible.
+ * naming scheme. It is hidden whether the folder is stored under a plain name
+ * (a `.gitkeep` file) or an encrypted one — then the decrypted label is
+ * `.gitkeep`, or, for a repository from before encrypted names, the stored name
+ * is `.gitkeep.age`.
  */
 function isFolderPlaceholder(node: TreeNode, label: string): boolean {
-  if (node.type !== 'file' || !node.name.endsWith('.age')) return false
-  return label === FOLDER_PLACEHOLDER || node.name === `${FOLDER_PLACEHOLDER}.age`
+  if (node.type !== 'file') return false
+  if (label === FOLDER_PLACEHOLDER || node.name === FOLDER_PLACEHOLDER) return true
+  return node.name === `${FOLDER_PLACEHOLDER}.age`
 }
 
 interface RowActionsProps {
@@ -71,22 +75,22 @@ interface RowActionsProps {
   where: string
   /** Stored path of the folder, or '' for the repository root. */
   path: string
-  canAddFolder: boolean
+  /** While the repository is unlocked a new folder gets an encrypted name. */
+  isUnlocked: boolean
   onAddFile: () => void
   onAddFolder: () => void
 }
 
 /**
  * New file and new folder buttons at the end of a tree row. Shown on hover or
- * focus, and always on touch screens where there is no hover. Adding a file is
- * always possible — a plain file needs no password — while a folder needs the
- * repository password for its placeholder, so that button is disabled while the
- * repository is locked.
+ * focus, and always on touch screens where there is no hover. Both are always
+ * enabled: an entry created while the repository is locked (or not set up) is
+ * stored plainly, which needs no password — only an encrypted name needs it.
  */
 function RowActions({
   where,
   path,
-  canAddFolder,
+  isUnlocked,
   onAddFile,
   onAddFolder,
 }: RowActionsProps) {
@@ -112,9 +116,8 @@ function RowActions({
         data-path={path}
         variant="ghost"
         size="icon-xs"
-        title={canAddFolder ? `New folder in ${where}` : 'Unlock the repository to add items here'}
+        title={isUnlocked ? `New folder in ${where}` : `New plain folder in ${where}`}
         aria-label={`New folder in ${where}`}
-        disabled={!canAddFolder}
         onClick={onAddFolder}
       >
         <FolderPlus className="size-3" />
@@ -346,7 +349,7 @@ export function FileTree({
               <RowActions
                 where={label}
                 path={node.path}
-                canAddFolder={isUnlocked}
+                isUnlocked={isUnlocked}
                 onAddFile={() => void createIn('file', node)}
                 onAddFolder={() => void createIn('folder', node)}
               />
@@ -393,7 +396,7 @@ export function FileTree({
         <RowActions
           where={repo}
           path=""
-          canAddFolder={isUnlocked}
+          isUnlocked={isUnlocked}
           onAddFile={() => void createIn('file', null)}
           onAddFolder={() => void createIn('folder', null)}
         />

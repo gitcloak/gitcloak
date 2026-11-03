@@ -11,7 +11,7 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 ## Features
 
 - **Client-Side Encryption**: All encryption/decryption happens in your browser using age format
-- **Optional Encryption Per File**: choose Encrypted (the default) or Plain for each file you create. Plain files are stored under their own name exactly as written, so they stay readable on GitHub without the password; encrypted and plain files can live in the same repository. A file can be added anywhere, inside a folder too, without unlocking first: while the repository is locked (or not yet set up) only Plain is on offer, and the new file keeps the folder where the tree already put it instead of getting a second copy
+- **Optional Encryption Per File**: choose Encrypted (the default) or Plain for each file you create. Plain files are stored under their own name exactly as written, so they stay readable on GitHub without the password; encrypted and plain files can live in the same repository. A file can be added anywhere, inside a folder too, without unlocking first: while the repository is locked (or not yet set up) only Plain is on offer, and the new file keeps the folder where the tree already put it instead of getting a second copy. A new folder can be created without unlocking too: locked (or not set up), it is stored as a plain folder under its own name, so it needs no password
 - **Zero Knowledge**: Your encryption password is stored only in browser memory, never transmitted
 - **GitHub Native**: Encrypted files are stored directly in your GitHub repositories
 - **Repository-Level Passwords**: Each repository has its own encryption password
@@ -29,7 +29,7 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 
 1. **Authenticate** with your GitHub account via OAuth
 2. **Select** a repository you want to work with
-3. **Create or edit** files - choose Encrypted (the default) or Plain for each new file. Encrypted files are age-encrypted, under encrypted names too. You can add a file inside any folder without unlocking; if the repository is locked (or not set up yet), the only choice is Plain
+3. **Create or edit** files - choose Encrypted (the default) or Plain for each new file. Encrypted files are age-encrypted, under encrypted names too. You can add a file inside any folder without unlocking; if the repository is locked (or not set up yet), the only choice is Plain. A new folder works the same way: without the password it is created as a plain folder
 4. **Set a password** the first time you save an encrypted file in a repository
 5. **Files are saved** to GitHub: encrypted files with a `.age` extension, fully encrypted, under encrypted names; plain files exactly as you wrote them
 
