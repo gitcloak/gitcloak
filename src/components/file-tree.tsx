@@ -31,8 +31,17 @@ interface FileTreeProps {
   /** Set while the repository is unlocked. Folders can only be added then. */
   isUnlocked?: boolean
   onFileSelect?: (path: string, sha: string) => void
-  /** Asks the owner to create an entry in `parentPath` (plain path, '' for the root). */
-  onCreateEntry?: (kind: 'file' | 'folder', parentPath: string) => void
+  /**
+   * Asks the owner to create an entry in the folder the tree shows.
+   * `parentPath` is the folder's plaintext path while it is known (the
+   * repository is unlocked) and its stored path otherwise; `storedParentPath`
+   * is always the stored path, or null for the repository root.
+   */
+  onCreateEntry?: (
+    kind: 'file' | 'folder',
+    parentPath: string,
+    storedParentPath: string | null
+  ) => void
   onRefresh?: () => void
   selectedFilePath?: string
   onLoadingChange?: (isLoading: boolean) => void
@@ -62,7 +71,6 @@ interface RowActionsProps {
   where: string
   /** Stored path of the folder, or '' for the repository root. */
   path: string
-  canAddFile: boolean
   canAddFolder: boolean
   onAddFile: () => void
   onAddFolder: () => void
@@ -70,12 +78,14 @@ interface RowActionsProps {
 
 /**
  * New file and new folder buttons at the end of a tree row. Shown on hover or
- * focus, and always on touch screens where there is no hover.
+ * focus, and always on touch screens where there is no hover. Adding a file is
+ * always possible — a plain file needs no password — while a folder needs the
+ * repository password for its placeholder, so that button is disabled while the
+ * repository is locked.
  */
 function RowActions({
   where,
   path,
-  canAddFile,
   canAddFolder,
   onAddFile,
   onAddFolder,
@@ -91,9 +101,8 @@ function RowActions({
         data-path={path}
         variant="ghost"
         size="icon-xs"
-        title={canAddFile ? `New file in ${where}` : 'Unlock the repository to add items here'}
+        title={`New file in ${where}`}
         aria-label={`New file in ${where}`}
-        disabled={!canAddFile}
         onClick={onAddFile}
       >
         <FilePlus className="size-3" />
@@ -255,20 +264,23 @@ export function FileTree({
 
   /**
    * Start a new file or folder inside `node`, or at the root when `node` is
-   * null. The folder opens so the new entry shows once it is saved.
+   * null. The folder opens so the new entry shows once it is saved. The stored
+   * path always goes along: while the repository is locked the plain path is
+   * unknown, and even when it is known a plain file is written where it was
+   * clicked rather than into a folder derived from re-encrypting that path.
    */
   const createIn = async (kind: 'file' | 'folder', node: TreeNode | null) => {
     if (!node) {
-      onCreateEntry?.(kind, '')
+      onCreateEntry?.(kind, '', null)
       return
     }
     if (!expanded[node.path]) {
       void toggleDirectory(node)
     }
-    // Folder names are encrypted in storage, so the plain path is what the
-    // new entry needs.
+    // A new *encrypted* name is derived from the folder's plain path, which
+    // needs the name key.
     const parent = filenameKey ? await decryptRepoPath(node.path, filenameKey, 'dir') : node.path
-    onCreateEntry?.(kind, parent)
+    onCreateEntry?.(kind, parent, node.path)
   }
 
   const renderNodes = (nodes: TreeNode[], level: number): ReactNode[] =>
@@ -334,7 +346,6 @@ export function FileTree({
               <RowActions
                 where={label}
                 path={node.path}
-                canAddFile={isUnlocked}
                 canAddFolder={isUnlocked}
                 onAddFile={() => void createIn('file', node)}
                 onAddFolder={() => void createIn('folder', node)}
@@ -382,7 +393,6 @@ export function FileTree({
         <RowActions
           where={repo}
           path=""
-          canAddFile
           canAddFolder={isUnlocked}
           onAddFile={() => void createIn('file', null)}
           onAddFolder={() => void createIn('folder', null)}

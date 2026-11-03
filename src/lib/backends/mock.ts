@@ -108,6 +108,12 @@ const REPO_SEEDS: MockRepoSeed[] = [
         kind: 'plain',
         content: '# Scratch\n\nNothing secret here yet.\n',
       },
+      // A folder, so a file can be added inside one before the repository has
+      // ever been set up.
+      'docs/readme.md': {
+        kind: 'plain',
+        content: '# Docs\n\nPlain documentation.\n',
+      },
     },
   },
   {

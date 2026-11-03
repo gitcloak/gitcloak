@@ -34,6 +34,14 @@ interface SelectedFile {
   /** False when the file is stored as plain text instead of age ciphertext. */
   encrypted: boolean
   isNew?: boolean // Flag to indicate this is a new file not yet saved
+  /**
+   * Exact stored path to write a new plain file to, set when it was created
+   * inside a folder the tree showed. That folder may be stored under an
+   * encrypted name, so the file goes to the stored path it was created with
+   * instead of re-deriving one by encrypting the plain path again. Unset for a
+   * name typed into the create dialog at the repository root.
+   */
+  storedPath?: string
   openId: number // Unique per opened file; keys the editor so it resets on open
 }
 
@@ -126,12 +134,18 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   // Password dialog state (unlock / decrypt / set password / save password)
   const [passwordDialog, setPasswordDialog] = useState<PasswordDialogState>(CLOSED_PASSWORD_DIALOG)
 
-  // Name prompt for a new file or folder. `parent` is the plain path of the
-  // folder it goes in, or '' for the repository root. `encrypted` is the
-  // encryption choice for a new file and is ignored for folders.
+  // Name prompt for a new file or folder. `parent` is the folder it goes in, or
+  // '' for the repository root. It is the plain path while the repository is
+  // unlocked and the stored path while it is locked, which is what the new
+  // entry's own path is built from. `storedParent` is the folder's stored path
+  // (null at the root), which a plain file is written to as it is.
+  // `encrypted` is the encryption choice for a new file and is ignored for
+  // folders.
   const [createDialog, setCreateDialog] = useState<{
     kind: 'file' | 'folder'
     parent: string
+    parentIsStored: boolean
+    storedParent: string | null
     encrypted: boolean
   } | null>(null)
 
@@ -477,13 +491,35 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     showNotice('info', `${key} is now locked. Password removed from memory.`)
   }
 
-  const handleCreateEntry = (kind: 'file' | 'folder', parent: string) => {
+  const handleCreateEntry = (
+    kind: 'file' | 'folder',
+    parent: string,
+    storedParent: string | null
+  ) => {
     if (!selectedRepo) {
       showNotice('error', 'Select a repository first.')
       return
     }
 
-    setCreateDialog({ kind, parent, encrypted: true })
+    // A nested file can only be encrypted once the repository is unlocked: the
+    // folder's plaintext path is needed to build its encrypted name. While the
+    // repository is locked or uninitialized the tree can only hand over the
+    // folder's stored path, so a nested file must be plain there. At the root
+    // both are possible — an encrypted file there starts (and asks for) the
+    // repository password on save.
+    const unlocked = Boolean(
+      repoPasswords[`${selectedRepo.owner}/${selectedRepo.name}`]
+    )
+    const nested = storedParent !== null
+    const encrypted = kind === 'file' ? !nested || unlocked : true
+
+    setCreateDialog({
+      kind,
+      parent,
+      parentIsStored: nested && !unlocked,
+      storedParent,
+      encrypted,
+    })
   }
 
   /**
@@ -549,7 +585,9 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     if (!selectedRepo || !createDialog) return
 
     const path = createDialog.parent ? `${createDialog.parent}/${name}` : name
-    let problem = validateFilePath(path)
+    // A locked repository's folder path is already stored, and stored segments
+    // are longer than the plaintext limit, so only the typed part is checked.
+    let problem = validateFilePath(createDialog.parentIsStored ? name : path)
     if (!problem && path.split('/').pop() === FOLDER_PLACEHOLDER) {
       problem = `${FOLDER_PLACEHOLDER} is reserved for empty folders.`
     }
@@ -576,6 +614,11 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
       repo: selectedRepo.name,
       encrypted: createDialog.encrypted,
       isNew: true,
+      // A plain file created inside a folder is written to that folder's stored
+      // path, so it lands where the user clicked it and its folder segments are
+      // never encrypted a second time.
+      storedPath:
+        createDialog.storedParent === null ? undefined : `${createDialog.storedParent}/${name}`,
       openId: nextOpenId(),
     })
   }
@@ -638,15 +681,20 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     try {
       const repoKeyForFile = `${selectedFile.owner}/${selectedFile.repo}`
 
-      // A plain file carries no ciphertext, so it needs no password. Only its
-      // folder segments are encrypted, which keeps it inside the same stored
-      // folders as the encrypted files next to it.
+      // A plain file carries no ciphertext, so it needs no password. It is
+      // written to the stored path it was created with, which keeps a file
+      // added inside a folder in that folder whether the folder is stored under
+      // a plain or an encrypted name. A name typed into the create dialog at the
+      // repository root has no stored path yet, so its folder segments are
+      // encrypted when the repository has a name key, which keeps it in the same
+      // stored tree as the encrypted files next to it.
       if (!selectedFile.encrypted) {
         const nameKey = filenameKeys[repoKeyForFile] ?? null
         const savePath =
-          selectedFile.isNew && nameKey
+          selectedFile.storedPath ??
+          (selectedFile.isNew && nameKey
             ? await encryptPlainFilePath(selectedFile.path, nameKey)
-            : selectedFile.path
+            : selectedFile.path)
         await saveToGitHub(savePath, content, false)
         return
       }
@@ -773,13 +821,26 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
 
   const createKind = createDialog?.kind ?? 'file'
   const createParent = createDialog?.parent ?? ''
+  // Whether the parent came from the tree of a locked repository, in which case
+  // its plaintext name is unknown here and it can only hold a plain file.
+  const createParentIsStored = createDialog?.parentIsStored ?? false
+  // A nested file can only be encrypted while its folder's plaintext path is
+  // known; at the root both choices are available. Mirrors the default chosen in
+  // `handleCreateEntry`.
+  const canEncryptFile = createParent === '' || !createParentIsStored
   const createDescription =
     createKind === 'folder'
       ? createParent
         ? `The folder is created in ${createParent}.`
         : 'Enter the folder name (e.g., folder/subfolder).'
       : createParent
-        ? `The file is created in ${createParent}.`
+        ? `The file is created in ${
+            createParentIsStored ? 'the folder you selected' : createParent
+          }.${
+            canEncryptFile
+              ? ''
+              : ' Only a plain file can be added here, because an encrypted name needs the repository password.'
+          }`
         : 'Enter the file name (e.g., folder/file.md).'
 
   return (
@@ -815,7 +876,10 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
                   {
                     value: 'encrypted',
                     label: 'Encrypted',
-                    hint: 'age ciphertext under an encrypted file name.',
+                    hint: canEncryptFile
+                      ? 'age ciphertext under an encrypted file name.'
+                      : 'An encrypted file here needs the repository password.',
+                    disabled: !canEncryptFile,
                   },
                   {
                     value: 'plain',

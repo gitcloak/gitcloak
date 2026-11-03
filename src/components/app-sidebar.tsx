@@ -103,7 +103,16 @@ interface AppSidebarProps {
   userImage?: string
   userEmail?: string
   onFileSelect?: (owner: string, repo: string, path: string, sha: string) => void
-  onCreateEntry?: (kind: 'file' | 'folder', parentPath: string) => void
+  /**
+   * Asks the owner to create an entry in a folder of the tree. `parentPath` is
+   * the folder's plaintext path while it is known, its stored path otherwise,
+   * and `storedParentPath` is always its stored path (null at the root).
+   */
+  onCreateEntry?: (
+    kind: 'file' | 'folder',
+    parentPath: string,
+    storedParentPath: string | null
+  ) => void
   onRepoChange?: (repo: Repository | null) => void
   onUnlockRepo?: () => void
   onLockRepo?: () => void

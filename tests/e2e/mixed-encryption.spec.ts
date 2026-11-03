@@ -159,6 +159,45 @@ test.describe('Plain and encrypted files side by side', () => {
     expect(inside).toHaveLength(2)
   })
 
+  test('a plain file added to an existing plaintext folder stays in that folder', async ({
+    page,
+    request,
+  }) => {
+    await gotoApp(page)
+    await selectRepo(page, 'mockuser/demo-notes')
+    await page.getByTestId('repo-lock-toggle').click()
+    await submitPassword(page, 'unlock', 'demo-password')
+
+    // `notes` predates encrypted names, so it is stored under its plain name.
+    // A plain file added to it must be written where the folder already is,
+    // instead of into a second, encrypted-name folder with the same label.
+    await clickFileNode(page, 'notes')
+    await page
+      .locator('[data-testid="file-node"][data-name="notes"] [data-testid="tree-new-file-button"]')
+      .click()
+    await chooseEncryption(page, 'plain')
+    await page.getByTestId('new-file-input').fill('scratch.md')
+    await page.getByTestId('new-file-submit').click()
+    await expect(page.getByTestId('selected-file-path')).toHaveText('notes/scratch.md')
+
+    await fillEditor(page, '# Scratch\n\nPlain, inside notes.\n')
+    await page.getByTestId('save-button').click()
+    await expect(page.getByTestId('notice')).toContainText('Saved notes/scratch.md')
+
+    const files = (await fetchMockState(request))['mockuser/demo-notes']
+    expect(files['notes/scratch.md']).toContain('Plain, inside notes.')
+    // `notes` is still the only folder in the repository.
+    const folders = new Set(
+      Object.keys(files)
+        .filter((path) => path.includes('/'))
+        .map((path) => path.split('/')[0])
+    )
+    expect([...folders]).toEqual(['notes'])
+    // And the tree still shows a single `notes` folder, holding the new file.
+    await expect(page.locator('[data-testid="file-node"][data-name="notes"]')).toHaveCount(1)
+    await expect(page.locator('[data-testid="file-node"][data-name="scratch.md"]')).toBeVisible()
+  })
+
   test('refuses a plain file name that ends in .age', async ({ page }) => {
     await gotoApp(page)
     await selectRepo(page, 'mockuser/scratch')

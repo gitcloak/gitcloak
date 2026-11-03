@@ -20,7 +20,7 @@ export interface InputDialogChoice {
   label: string
   /** Currently selected option value. */
   value: string
-  options: { value: string; label: string; hint?: string }[]
+  options: { value: string; label: string; hint?: string; disabled?: boolean }[]
   onChange: (value: string) => void
   /** Prefix for the `data-testid` attributes of the group and its options. */
   testId: string
@@ -100,6 +100,7 @@ export function InputDialog({
                         id={`${choice.testId}-${option.value}`}
                         data-testid={`${choice.testId}-${option.value}`}
                         value={option.value}
+                        disabled={option.disabled}
                         className="mt-0.5"
                       />
                       <div className="grid gap-0.5">
