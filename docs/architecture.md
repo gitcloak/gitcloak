@@ -19,14 +19,17 @@ holds an encrypted known string so a password can be checked without storing it.
 
 The promise to users, which every change must preserve:
 
-> The server and GitHub never see a password or plaintext file content.
+> The server and GitHub never see a password, and never see the plaintext of a
+> file the user chose to encrypt. They see plaintext only for files the user
+> explicitly created as plain (invariant 7).
 
 File and folder names are encrypted too (invariant 17). What is **not**
 protected (state this honestly in docs and UI, never claim "zero knowledge"):
 the number of entries and the depth of the directory tree, file sizes, commit
 messages (they contain the stored names), commit timing, names of entries
 created before encrypted names, and the set of repositories the user installed
-the app on.
+the app on. Files the user created as plain have neither an encrypted name nor
+encrypted content: both are visible on GitHub.
 
 ## 2. Trust boundaries
 
@@ -40,12 +43,12 @@ the app on.
 | Zone | May hold | Must never hold |
 | --- | --- | --- |
 | Browser memory (React state) | Repository/file passwords, decrypted text | Anything persisted: no `localStorage`, `sessionStorage`, IndexedDB, cookies, URLs, `console` output. The only allowed browser storage is non-sensitive UI preferences (e.g. the autosave toggle) |
-| Server (route handlers, server components) | GitHub OAuth token (read from the encrypted session cookie), ciphertext, repo metadata | Passwords, plaintext, decrypted content, token material in logs |
-| GitHub | Ciphertext, `.gitcloak`, stored names (encrypted for new entries), commit messages | Plain names of new entries, anything else |
+| Server (route handlers, server components) | GitHub OAuth token (read from the encrypted session cookie), ciphertext, repo metadata, and the plaintext of files the user created as plain while it passes through unlogged | Passwords, the plaintext of encrypted files, decrypted content, token material in logs |
+| GitHub | Ciphertext, `.gitcloak`, stored names (encrypted for new encrypted entries), commit messages, and the names and contents of files the user created as plain | Plain names of new encrypted entries, anything else |
 
-The browser is the only place plaintext exists. Treat any XSS as total
-compromise of unlocked repositories; the defences in section 5 exist for that
-reason.
+The browser is the only place plaintext exists for encrypted files. Treat any
+XSS as total compromise of unlocked repositories; the defences in section 5
+exist for that reason.
 
 ## 3. Code map and layering
 
@@ -97,14 +100,14 @@ Each has a test or a check. If you change code that touches one, prove it still 
 
 1. `age-encryption` is imported only in `lib/age-passphrase.ts`, which runs in the Web Worker `lib/encryption-worker.ts`; `lib/encryption`, `lib/gitcloak` and `lib/filenames` are imported only from client code (and the mock backend's seed data). No server route may decrypt or accept a password.
 2. Passwords and plaintext live only in React state and are cleared on lock (`handleLockRepo`). Never write them to storage, URLs, logs, error messages, analytics or `data-*` attributes.
-3. Passwords are never sent over the network. Request bodies to `/api/repos/**/save` carry ciphertext only.
+3. Passwords are never sent over the network. Request bodies to `/api/repos/**/save` carry ciphertext, or plaintext for a file the user explicitly created as plain (invariant 7).
 4. Crypto stays in age passphrase mode; do not hand-roll primitives, change the armor format, or add a "remember password" feature without a design review. Changes to the scrypt work factor or `.gitcloak` format need a version bump and a migration path for existing repositories. **Exception: file names** (`lib/filenames.ts`). age cannot encrypt a name deterministically, so names use an SIV-style construction over WebCrypto (HMAC-SHA256 as the synthetic IV, AES-CTR, keys from HKDF-SHA256). The keys come from a random 32-byte secret stored in `.gitcloak` (version 1.1) as `nameKey`, wrapped with age under the repository password. Names are therefore as hard to guess as the contents: never derive name keys directly from the password, because public names would then give a fast offline check. The construction is new and has not had an independent review; get one before relying on it for anything beyond name hiding.
 
 **Server and API**
 
 5. Every route handler calls `getSession()` first and returns 401 without a token. Server components under `(authenticated)` do the same. There is no unauthenticated data path. Do not add `middleware.ts`-only protection; check in the handler.
 6. All request input (path params, query, body) goes through `lib/validation.ts` before use. Add a validator when you add a field; never pass raw input to Octokit.
-7. `save` accepts only age ciphertext (`.age`) or a well-formed `.gitcloak`, never writes under `.github/`, and rejects traversal paths. Do not loosen this to "support" another file type; encrypt on the client instead. `move` renames only `.age` files to `.age` paths and copies the bytes unchanged; it never touches `.gitcloak`.
+7. `save` accepts age ciphertext for a `.age` path, a well-formed `.gitcloak`, or — only when the request carries `encrypted: false` — plain text for a path that is *not* `.age`. It never writes under `.github/` and rejects traversal paths. The flag defaults to `true`, so an undeclared plain save is refused exactly as before; the `.age` extension is enforced as the marker of an encrypted file in both directions. This is the one deliberate loosening of the old "ciphertext only" rule: optional per-file encryption is a product decision, and without it a plain file could not be stored at all. `move` renames only `.age` files to `.age` paths and copies the bytes unchanged; it never touches `.gitcloak`, so plain files cannot be renamed yet (see gap 11).
 8. State-changing routes (POST/PUT/PATCH/DELETE) call `isSameOrigin()`. Use `x-forwarded-host`, as it does, so it works behind Vercel.
 9. Errors returned to clients are fixed strings (or validation messages we wrote). Log details server-side with `console.error`, never return `error.message` from Octokit or the runtime.
 10. Never log tokens, token prefixes, cookies, request bodies or file content. Auth.js `debug` stays development-only.
@@ -120,14 +123,14 @@ Each has a test or a check. If you change code that touches one, prove it still 
 
 **File names**
 
-17. Plain names of new entries never leave the browser. `encryptRepoPath` in `lib/filenames.ts` produces stored names for new entries, and `name-migration.ts` produces them for old ones. The server validates and stores the stored name it is given (still `.age` for files), and the commit message shows the stored name. Tests: `tests/unit/filenames.test.ts`, `tests/e2e/encrypted-names.spec.ts` and `tests/e2e/name-migration.spec.ts`.
+17. Plain names of new entries never leave the browser, except for files the user created as plain: `encryptRepoPath` in `lib/filenames.ts` produces stored names for new encrypted entries, `encryptPlainFilePath` encrypts only the folder segments of a plain file, and `name-migration.ts` produces encrypted names for old ones. The server validates and stores the stored name it is given (still `.age` for encrypted files), and the commit message shows the stored name. Tests: `tests/unit/filenames.test.ts`, `tests/e2e/encrypted-names.spec.ts`, `tests/e2e/name-migration.spec.ts` and `tests/e2e/mixed-encryption.spec.ts`.
 
 ## 5. Defence in depth: how the layers back each other up
 
 | Threat | First line | Second line |
 | --- | --- | --- |
 | XSS reads password/plaintext | No HTML injection patterns, React escaping | CSP (`script-src 'self'`, `connect-src 'self'`) stops exfiltration; `frame-ancestors 'none'` stops clickjacking |
-| Plaintext committed by bug or crafted request | Client always encrypts before save | `validateSavePayload` refuses non-age content server-side |
+| Plaintext committed by bug or crafted request | Client encrypts every file the user did not mark as plain | `validateSavePayload` refuses non-age content unless the request declares the file plain, and refuses `encrypted: false` for a `.age` path |
 | Path traversal / writing CI files | `validatePath` | GitHub App permissions; `.github/` denied |
 | CSRF on save | SameSite session cookie | `isSameOrigin` |
 | Token leak | Never logged, not in URLs, not in the browser-visible session | Short-lived GitHub App tokens (see gap 1); scoped to installed repos |
@@ -213,4 +216,5 @@ Do not paper over these; fix them or consciously carry them. Remove an item when
 7. **CI gaps.** CI (lint, unit, build, e2e), Dependabot, CodeQL and `SECURITY.md` exist. Still missing: an `npm audit --omit=dev` step and the "no mock code in the production bundle" grep from section 8 in CI.
 8. **Dead code.** `lib/github.ts` and `lib/github-app.ts` are unused; delete them rather than extend them.
 9. **Pagination.** `listRepositories` reads only the first 100 repos.
-10. **Metadata leakage.** File names are encrypted (invariant 17), and `.age` files saved before that are renamed on unlock. Still visible: folder names and plain (non-`.age`) files, because renaming a folder moves everything inside it, code included, so that needs its own design. Also visible: commit messages (they contain the stored names; consider a generic message setting), entry counts, tree depth, and sizes.
+10. **Metadata leakage.** File names are encrypted (invariant 17), and `.age` files saved before that are renamed on unlock. Still visible: folder names, and the name and full contents of any file the user created as plain, because renaming a folder moves everything inside it, code included, so that needs its own design. Also visible: commit messages (they contain the stored names; consider a generic message setting), entry counts, tree depth, and sizes.
+11. **Plain files cannot be renamed.** `move` (`validateMovePayload`, `lib/backends/*`) only handles `.age` files, so the editor cannot rename or move a plain file, and it is not offered in the UI. Widening it means teaching the server that a plain target is legitimate and keeping the `.age` marker rule intact.

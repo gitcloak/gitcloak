@@ -62,6 +62,32 @@ describe('validateSavePayload', () => {
     expect(() => validateSavePayload({ path: 'a.md.age', content: 'secret' })).toThrow(/not age-encrypted/)
   })
 
+  it('stores plain text when the request declares the file as plain', () => {
+    const result = validateSavePayload({ path: 'notes.md', content: '# Notes', encrypted: false })
+    expect(result).toMatchObject({ path: 'notes.md', content: '# Notes', encrypted: false })
+  })
+
+  it('defaults to encrypted, so an undeclared plain save is still refused', () => {
+    expect(validateSavePayload({ path: 'a.md.age', content: ARMOR }).encrypted).toBe(true)
+    expect(() => validateSavePayload({ path: 'notes.md', content: '# Notes' })).toThrow()
+  })
+
+  it('keeps the .age extension meaning "encrypted" in both directions', () => {
+    expect(() =>
+      validateSavePayload({ path: 'notes.md.age', content: '# Notes', encrypted: false })
+    ).toThrow(/\.age extension/)
+    expect(() => validateSavePayload({ path: 'notes.md', content: ARMOR, encrypted: true })).toThrow()
+    expect(() =>
+      validateSavePayload({ path: '.github/x.md', content: '# Notes', encrypted: false })
+    ).toThrow('Writing to .github is not allowed')
+  })
+
+  it('rejects a non-boolean encrypted flag', () => {
+    expect(() => validateSavePayload({ path: 'notes.md', content: 'x', encrypted: 'yes' })).toThrow(
+      /encrypted flag/
+    )
+  })
+
   it('refuses non-.age paths and workflow files', () => {
     expect(() => validateSavePayload({ path: 'a.md', content: ARMOR })).toThrow()
     expect(() => validateSavePayload({ path: '.github/workflows/x.yml.age', content: ARMOR })).toThrow()

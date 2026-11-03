@@ -153,6 +153,24 @@ export async function encryptRepoPath(path: string, key: FilenameKey): Promise<s
 }
 
 /**
+ * Stored repository path for a plaintext file such as `notes/file.md`: every
+ * folder segment is encrypted, so the file lands inside the same stored
+ * folders as everything else, while the file's own name is kept as typed.
+ *
+ * Plain files carry no ciphertext and are meant to be readable without the
+ * password, so their name is not encrypted either. The caller must validate
+ * the path with `validateFilePath` first.
+ */
+export async function encryptPlainFilePath(path: string, key: FilenameKey): Promise<string> {
+  const segments = path.split('/')
+  const stored: string[] = []
+  for (const [index, segment] of segments.entries()) {
+    stored.push(index === segments.length - 1 ? segment : await encryptEntryName(segment, key))
+  }
+  return stored.join('/')
+}
+
+/**
  * Plaintext path for a stored repository path. Each segment is decrypted on
  * its own, so a path that mixes encrypted and plain segments still reads well.
  * `lastType` says whether the final segment is a file (the default) or a folder.

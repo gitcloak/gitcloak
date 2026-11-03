@@ -138,6 +138,31 @@ test.describe('Backend API contract', () => {
     }
   })
 
+  test('save stores a declared plain file and refuses a mismatched declaration', async ({
+    request,
+  }) => {
+    const armor = '-----BEGIN AGE ENCRYPTED FILE-----\nfake\n-----END AGE ENCRYPTED FILE-----'
+
+    const plain = await request.post('/api/repos/mockuser/scratch/save', {
+      data: { path: 'public.md', content: '# Public\n', encrypted: false },
+    })
+    expect(plain.status()).toBe(200)
+    expect((await plain.json()).path).toBe('public.md')
+
+    const state = await fetchMockState(request)
+    expect(state['mockuser/scratch']['public.md']).toBe('# Public\n')
+
+    // `.age` marks a file as encrypted, so the two declarations cannot be mixed up.
+    const bad = [
+      { path: 'plain.md.age', content: '# Public\n', encrypted: false },
+      { path: 'plain.md', content: armor },
+    ]
+    for (const data of bad) {
+      const response = await request.post('/api/repos/mockuser/scratch/save', { data })
+      expect(response.status(), JSON.stringify(data)).toBe(400)
+    }
+  })
+
   test('save rejects cross-origin browser requests', async ({ request }) => {
     const response = await request.post('/api/repos/mockuser/scratch/save', {
       headers: { origin: 'https://evil.example' },

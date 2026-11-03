@@ -289,7 +289,8 @@ export function EditorArea({
                 Select a file to start editing
               </p>
               <p className="text-xs">
-                Your files will be encrypted with age format before saving
+                Files are encrypted with age before saving, or stored as plain
+                text when you create them that way
               </p>
             </div>
           </div>

@@ -3,8 +3,9 @@
  *
  * The routes proxy requests to GitHub with the signed-in user's token, so
  * everything taken from the URL or request body is validated here first. The
- * server also refuses to store anything that is not age ciphertext, so a
- * client bug (or a crafted request) can never commit plaintext.
+ * server also refuses to store anything that is not age ciphertext unless the
+ * request declares the file as plain with `encrypted: false`, so a client bug
+ * (or a crafted request) can never commit plaintext by accident.
  */
 
 const OWNER_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
@@ -69,13 +70,27 @@ export function validatePath(path: unknown, { allowRoot = false } = {}): string 
   return path
 }
 
-function validateWritablePath(path: string): void {
+/**
+ * A writable path is either `.gitcloak`, an encrypted `.age` file, or — when
+ * the request declares the file as plain — a path that is *not* `.age`, since
+ * the extension is what marks a file as encrypted.
+ */
+function validateWritablePath(path: string, encrypted: boolean): void {
   // Never let the app write CI configuration or other repository automation.
   if (path.split('/')[0].toLowerCase() === '.github') {
     throw new ValidationError('Writing to .github is not allowed')
   }
-  if (path !== GITCLOAK_FILE && !path.endsWith('.age')) {
-    throw new ValidationError('Only .age files and .gitcloak can be saved')
+  if (path === GITCLOAK_FILE) {
+    return
+  }
+  if (encrypted) {
+    if (!path.endsWith('.age')) {
+      throw new ValidationError('Only .age files and .gitcloak can be saved')
+    }
+    return
+  }
+  if (path.endsWith('.age')) {
+    throw new ValidationError('A plain file cannot use the .age extension')
   }
 }
 
@@ -101,6 +116,8 @@ function validateGitCloakContent(content: string): void {
 export interface SavePayload {
   path: string
   content: string
+  /** False when the file is stored as plain text; defaults to true (encrypted). */
+  encrypted: boolean
   message?: string
   sha?: string
 }
@@ -109,17 +126,22 @@ export function validateSavePayload(body: unknown): SavePayload {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     throw new ValidationError('Invalid request body')
   }
-  const { path, content, message, sha } = body as Record<string, unknown>
+  const { path, content, message, sha, encrypted } = body as Record<string, unknown>
+
+  if (encrypted !== undefined && typeof encrypted !== 'boolean') {
+    throw new ValidationError('Invalid encrypted flag')
+  }
+  const isEncrypted = encrypted ?? true
 
   const validPath = validatePath(path)
-  validateWritablePath(validPath)
+  validateWritablePath(validPath, isEncrypted)
 
   if (typeof content !== 'string' || content === '') {
     throw new ValidationError('Missing required fields')
   }
   if (validPath === GITCLOAK_FILE) {
     validateGitCloakContent(content)
-  } else if (!content.startsWith(AGE_ARMOR_HEADER)) {
+  } else if (isEncrypted && !content.startsWith(AGE_ARMOR_HEADER)) {
     throw new ValidationError('Refusing to store content that is not age-encrypted')
   }
 
@@ -143,7 +165,7 @@ export function validateSavePayload(body: unknown): SavePayload {
     validSha = sha
   }
 
-  return { path: validPath, content, message: validMessage, sha: validSha }
+  return { path: validPath, content, encrypted: isEncrypted, message: validMessage, sha: validSha }
 }
 
 export interface MovePayload {
@@ -175,7 +197,7 @@ export function validateMovePayload(body: unknown): MovePayload {
   if (!validTo.endsWith('.age')) {
     throw new ValidationError('Only .age files can be renamed')
   }
-  validateWritablePath(validTo)
+  validateWritablePath(validTo, true)
   if (validTo === validFrom) {
     throw new ValidationError('The new name must differ from the old one')
   }

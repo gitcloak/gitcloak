@@ -12,6 +12,19 @@ import {
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+
+/** An extra single-choice question asked alongside the name. */
+export interface InputDialogChoice {
+  /** Heading above the options. */
+  label: string
+  /** Currently selected option value. */
+  value: string
+  options: { value: string; label: string; hint?: string }[]
+  onChange: (value: string) => void
+  /** Prefix for the `data-testid` attributes of the group and its options. */
+  testId: string
+}
 
 interface InputDialogProps {
   open: boolean
@@ -21,6 +34,8 @@ interface InputDialogProps {
   label: string
   placeholder?: string
   defaultValue?: string
+  /** Optional single-choice question, e.g. encrypted or plain. */
+  choice?: InputDialogChoice
   onSubmit: (value: string) => void
 }
 
@@ -32,6 +47,7 @@ export function InputDialog({
   label,
   placeholder,
   defaultValue = "",
+  choice,
   onSubmit,
 }: InputDialogProps) {
   const [value, setValue] = useState(defaultValue)
@@ -70,6 +86,38 @@ export function InputDialog({
                 autoFocus
               />
             </div>
+            {choice && (
+              <div className="grid gap-2">
+                <Label>{choice.label}</Label>
+                <RadioGroup
+                  data-testid={choice.testId}
+                  value={choice.value}
+                  onValueChange={choice.onChange}
+                >
+                  {choice.options.map((option) => (
+                    <div key={option.value} className="flex items-start gap-2">
+                      <RadioGroupItem
+                        id={`${choice.testId}-${option.value}`}
+                        data-testid={`${choice.testId}-${option.value}`}
+                        value={option.value}
+                        className="mt-0.5"
+                      />
+                      <div className="grid gap-0.5">
+                        <Label
+                          htmlFor={`${choice.testId}-${option.value}`}
+                          className="text-sm font-normal"
+                        >
+                          {option.label}
+                        </Label>
+                        {option.hint && (
+                          <span className="text-xs text-muted-foreground">{option.hint}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </RadioGroup>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
