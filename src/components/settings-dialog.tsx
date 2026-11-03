@@ -43,7 +43,8 @@ function SectionLabel({ children, id }: { children: string; id?: string }) {
 
 /**
  * Application settings. Changes apply immediately, so the only action is
- * "Done". Theme is stored by `next-themes`; autosave is stored by
+ * "Done". Both settings are persisted in first-party cookies: theme through
+ * `ThemeCookieSync` (which mirrors `next-themes`), autosave through
  * `useAutosave`.
  */
 export function SettingsDialog({

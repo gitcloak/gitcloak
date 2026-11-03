@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Clock, Code2, Eye, PenLine, Save } from 'lucide-react'
+import { Clock, Code2, Eye, PenLine, Save, Zap } from 'lucide-react'
 
 import { MarkdownEditor } from '@/components/markdown-editor'
 import { Button } from '@/components/ui/button'
@@ -134,6 +134,10 @@ export function EditorArea({
   }, [isSaving, queued, savedContent, onSave])
 
   const canSave = Boolean(selectedFile) && hasChanges && !isSaving
+  // Autosave is on but idle: a file is open and its repository is locked, so a
+  // save would need the password. No file open is not "paused" — nothing to
+  // save yet.
+  const autosavePaused = Boolean(selectedFile) && !canAutosave
 
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-gc-surface">
@@ -206,6 +210,34 @@ export function EditorArea({
               {viewMode === 'rendered' ? 'Source' : 'Rendered'}
             </span>
           </Button>
+        )}
+
+        {autosave && (
+          <span
+            data-testid="autosave-indicator"
+            data-state={autosavePaused ? 'paused' : 'on'}
+            className={cn(
+              'flex shrink-0 items-center gap-1 rounded-gc-sm px-2 py-1 text-xs font-medium',
+              autosavePaused
+                ? 'bg-gc-canvas text-gc-fg-muted'
+                : 'bg-gc-success-bg text-gc-success-fg'
+            )}
+            title={
+              autosavePaused
+                ? 'Autosave is on, but paused until the repository is unlocked'
+                : 'Autosave is on'
+            }
+            aria-label={
+              autosavePaused
+                ? 'Autosave is on, but paused until the repository is unlocked'
+                : 'Autosave is on'
+            }
+          >
+            <Zap className="size-3.5" aria-hidden="true" />
+            <span className="hidden sm:inline">
+              {autosavePaused ? 'Autosave paused' : 'Autosave on'}
+            </span>
+          </span>
         )}
 
         <Button

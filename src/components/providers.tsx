@@ -4,6 +4,8 @@ import { ThemeProvider } from "next-themes"
 import { SessionProvider } from "next-auth/react"
 import type { Session } from "next-auth"
 
+import { ThemeCookieSync } from "@/components/theme-cookie-sync"
+
 // Preview deployments and end-to-end tests run against the mock backend,
 // which has no real OAuth. Seed the provider with a signed-in session so the
 // UI renders without ever calling Auth.js.
@@ -31,6 +33,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       enableSystem
       disableTransitionOnChange
     >
+      <ThemeCookieSync />
       <SessionProvider session={mockSession}>{children}</SessionProvider>
     </ThemeProvider>
   )
