@@ -1,26 +1,26 @@
-"use client"
+'use client'
 
-import { useCallback, useSyncExternalStore } from "react"
+import { useCallback, useSyncExternalStore } from 'react'
 
-const AUTOSAVE_STORAGE_KEY = "gitcloak:autosave"
+import { readSettingCookie, writeSettingCookie } from '@/lib/settings-cookie'
 
 // Preference changes made in this tab are pushed to every subscriber. Other
-// tabs are picked up through the `storage` event.
+// tabs are picked up when the window regains focus (a cookie change emits no
+// `storage` event the way localStorage does).
 const listeners = new Set<() => void>()
 
 function readAutosave(): boolean {
   try {
-    return window.localStorage.getItem(AUTOSAVE_STORAGE_KEY) === "true"
+    return readSettingCookie('autosave') === 'true'
   } catch {
-    // Storage can be blocked (private mode, disabled site data). Fall back to
-    // the default instead of breaking the settings screen.
+    // A blocked cookie jar should not break the settings screen.
     return false
   }
 }
 
 function writeAutosave(enabled: boolean) {
   try {
-    window.localStorage.setItem(AUTOSAVE_STORAGE_KEY, String(enabled))
+    writeSettingCookie('autosave', String(enabled))
   } catch {
     // The preference still applies for this session.
   }
@@ -29,16 +29,16 @@ function writeAutosave(enabled: boolean) {
 
 function subscribe(listener: () => void) {
   listeners.add(listener)
-  window.addEventListener("storage", listener)
+  window.addEventListener('focus', listener)
   return () => {
     listeners.delete(listener)
-    window.removeEventListener("storage", listener)
+    window.removeEventListener('focus', listener)
   }
 }
 
 /**
  * Whether edits are saved automatically shortly after the user stops typing.
- * Persisted per browser; off by default.
+ * Persisted per browser in a cookie; off by default.
  */
 export function useAutosave(): [boolean, (enabled: boolean) => void] {
   const enabled = useSyncExternalStore(subscribe, readAutosave, () => false)
