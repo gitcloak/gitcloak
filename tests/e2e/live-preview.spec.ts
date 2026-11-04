@@ -213,6 +213,34 @@ test.describe('Live preview editor', () => {
     await expectEditorValue(page, markdown)
   })
 
+  test('hides YAML front matter in the rendered view, but never in source', async ({
+    page,
+  }) => {
+    await openFile(page)
+    const markdown =
+      '---\ntitle: Live title\ntags: [docs, demo]\n---\n\n# Heading\n\nbody\n'
+    await fillEditor(page, markdown)
+
+    // The rendered view drops the whole block: none of it is visible and none
+    // of it is styled as Markdown (no rule, no heading, no link).
+    await expect(page.locator('.cm-lp-h1')).toHaveText('Heading')
+    await expect(page.locator('.cm-lp-h2')).toHaveCount(0)
+    await expect(page.locator('.cm-lp-hr')).toHaveCount(0)
+    await expect(page.locator('.cm-lp-link')).toHaveCount(0)
+    await expect(page.locator('.cm-content')).not.toContainText('title: Live title')
+    await expect(page.locator('.cm-content')).not.toContainText('tags: [docs, demo]')
+    await expect(page.locator('.cm-content')).not.toContainText('---')
+    // Hiding it is presentation only; the document keeps the front matter.
+    await expectEditorValue(page, markdown)
+
+    // The source view shows it again, exactly as written.
+    await page.getByTestId('view-mode-toggle').click()
+    await expect(page.locator('.cm-content')).toContainText('title: Live title')
+    await expect(page.locator('.cm-content')).toContainText('---')
+    await expect(page.locator('.cm-editor')).toHaveClass(/cm-lp-source/)
+    await expectEditorValue(page, markdown)
+  })
+
   test('keeps the cursor and undo history when switching views', async ({ page }) => {
     await openFile(page)
     await fillEditor(page, 'first')

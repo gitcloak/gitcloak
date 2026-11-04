@@ -9,6 +9,10 @@ import {
   CheckboxWidget,
   RuleWidget,
   computeLivePreview,
+  frontMatterBlock,
+  frontMatterRange,
+  livePreview,
+  sourceView,
 } from '@/lib/live-preview'
 import { toggleMarker } from '@/lib/live-preview-commands'
 
@@ -337,6 +341,88 @@ describe('live preview: atomic ranges', () => {
     const state = makeState(doc, 0)
     preview(state)
     expect(state.doc.toString()).toBe(doc)
+  })
+})
+
+describe('live preview: front matter', () => {
+  const doc = '---\ntitle: Live title\ntags: [docs, demo]\n---\n\n# Heading\n\nbody\n'
+
+  /** The state the app builds: Markdown with GFM plus the live preview. */
+  function renderedState(text: string, cursor = 0): EditorState {
+    return EditorState.create({
+      doc: text,
+      selection: EditorSelection.cursor(cursor),
+      extensions: [markdown({ extensions: [GFM] }), livePreview],
+    })
+  }
+
+  /** The ranges of the whole-line block replacement hiding the front matter. */
+  function hiddenBlocks(state: EditorState): Array<{ from: number; to: number; block?: boolean }> {
+    const out: Array<{ from: number; to: number; block?: boolean }> = []
+    state.field(frontMatterBlock).between(0, state.doc.length, (from, to, value) => {
+      out.push({ from, to, block: (value.spec as { block?: boolean }).block })
+    })
+    return out
+  }
+
+  it('reads a leading --- block as front matter and ends it past the closing line', () => {
+    const text = EditorState.create({ doc }).doc
+    expect(frontMatterRange(text)).toEqual({ from: 0, to: text.line(5).from })
+  })
+
+  it('accepts ... as the closing delimiter', () => {
+    const text = EditorState.create({ doc: '---\na: 1\n...\nbody\n' }).doc
+    expect(frontMatterRange(text)).toEqual({ from: 0, to: text.line(4).from })
+  })
+
+  it('covers a block that runs to the end of the document', () => {
+    const text = EditorState.create({ doc: '---\na: 1\n---' }).doc
+    expect(frontMatterRange(text)).toEqual({ from: 0, to: text.length })
+  })
+
+  it('ignores an opening --- that is never closed', () => {
+    const text = EditorState.create({ doc: '---\ntitle: x\n\nbody\n' }).doc
+    expect(frontMatterRange(text)).toBeNull()
+  })
+
+  it('ignores a --- that is not on the first line, or the only line', () => {
+    expect(frontMatterRange(EditorState.create({ doc: '\n---\na: 1\n---\n' }).doc)).toBeNull()
+    expect(frontMatterRange(EditorState.create({ doc: '---' }).doc)).toBeNull()
+    expect(frontMatterRange(EditorState.create({ doc: '' }).doc)).toBeNull()
+    expect(frontMatterRange(EditorState.create({ doc: '# Heading\n\n---\n' }).doc)).toBeNull()
+  })
+
+  it('hides the block as whole lines, from the first line to the end of the block', () => {
+    const state = renderedState(doc, doc.length)
+    expect(hiddenBlocks(state)).toEqual([{ from: 0, to: state.doc.line(5).from, block: true }])
+  })
+
+  it('decorates none of the block, so the metadata is never styled as Markdown', () => {
+    const state = makeState(doc, doc.length)
+    const block = frontMatterRange(state.doc)!
+    // The setext reading of the closing `---` would otherwise show as a rule
+    // and an h2 over the metadata lines.
+    expect(classesOn(state, 'cm-lp-hr')).toEqual([])
+    expect(classesOn(state, 'cm-lp-h2')).toEqual([])
+    expect(classesOn(state, 'cm-lp-h1')).toEqual([6])
+    expect(preview(state).all.filter((d) => d.from < block.to)).toEqual([])
+    // Hiding is presentation only: the document is untouched.
+    expect(state.doc.toString()).toBe(doc)
+  })
+
+  it('drops the block decoration with the extension, so the source view shows it', () => {
+    expect(hiddenBlocks(renderedState(doc))).toHaveLength(1)
+    const source = EditorState.create({
+      doc,
+      extensions: [markdown({ extensions: [GFM] }), sourceView],
+    })
+    expect(() => source.field(frontMatterBlock)).toThrow()
+  })
+
+  it('hides a block again once the document changes', () => {
+    const state = renderedState(doc)
+    const next = state.update({ changes: { from: state.doc.length, insert: 'more\n' } }).state
+    expect(hiddenBlocks(next)).toEqual([{ from: 0, to: next.doc.line(5).from, block: true }])
   })
 })
 
