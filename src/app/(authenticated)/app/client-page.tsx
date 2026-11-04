@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { AlertCircle, KeyRound, Lock, ShieldCheck } from 'lucide-react'
 import { AppSidebar, type RepoStatus } from '@/components/app-sidebar'
+import type { RenameTarget } from '@/components/file-tree'
 import { EditorArea } from '@/components/editor-area'
 import { LoadingOverlay } from '@/components/loading-overlay'
 import { PasswordDialog } from '@/components/password-dialog'
@@ -12,7 +13,7 @@ import { SettingsDialog } from '@/components/settings-dialog'
 import { SidebarInset } from '@/components/ui/sidebar'
 import { useAutosave } from '@/hooks/use-autosave'
 import { useDisplayPath } from '@/hooks/use-display-path'
-import { encryptPlainFilePath, encryptRepoPath, FOLDER_PLACEHOLDER, validateFilePath, type FilenameKey } from '@/lib/filenames'
+import { encryptEntryName, encryptPlainFilePath, encryptRepoPath, FOLDER_PLACEHOLDER, validateFilePath, type FilenameKey } from '@/lib/filenames'
 import type { NameMigration } from '@/lib/name-migration'
 
 interface Repository {
@@ -151,6 +152,8 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [autosave, setAutosave] = useAutosave()
+  // The file to rename, or null while the rename dialog is closed.
+  const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null)
 
   const repoKey = selectedRepo ? `${selectedRepo.owner}/${selectedRepo.name}` : null
   // A repository's name key exists only while its password is in memory.
@@ -650,6 +653,99 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     })
   }
 
+  /** Open the rename dialog for a file the tree shows. */
+  const handleRenameFile = (file: RenameTarget) => {
+    if (!selectedRepo) return
+    setRenameTarget(file)
+  }
+
+  /**
+   * Rename a file in place. The move copies the stored bytes unchanged, so
+   * nothing is decrypted or re-encrypted: an encrypted file only gets a new
+   * stored name, encrypted from the new plain name, and a plain file keeps the
+   * new name as typed. Either way the file stays in the folder it was in.
+   */
+  const handleRenameSubmit = (newName: string) => {
+    const target = renameTarget
+    if (!selectedRepo || !target) return
+
+    const encrypted = target.name.endsWith('.age')
+    let problem = validateFilePath(newName)
+    if (!problem && newName.includes('/')) {
+      problem = 'Enter a name without "/". Renaming only changes the file name.'
+    }
+    if (!problem && newName === FOLDER_PLACEHOLDER) {
+      problem = `${FOLDER_PLACEHOLDER} is reserved for empty folders.`
+    }
+    if (!problem && !encrypted && newName.endsWith('.age')) {
+      problem = 'A plain file name cannot end in .age.'
+    }
+    if (!problem && newName === target.label) {
+      problem = 'The new name must differ from the old one.'
+    }
+    if (problem) {
+      showNotice('error', problem)
+      return
+    }
+
+    void (async () => {
+      const owner = selectedRepo.owner
+      const repoName = selectedRepo.name
+      const folder = target.path.split('/').slice(0, -1).join('/')
+      const nameKey = filenameKeys[`${owner}/${repoName}`] ?? null
+
+      let to: string
+      if (encrypted) {
+        if (!nameKey) {
+          showNotice('error', 'Unlock the repository to rename an encrypted file.')
+          return
+        }
+        const stored = `${await encryptEntryName(newName, nameKey)}.age`
+        to = folder ? `${folder}/${stored}` : stored
+      } else {
+        to = folder ? `${folder}/${newName}` : newName
+      }
+
+      setLoadingMessage('Renaming file...')
+      setIsLoading(true)
+      try {
+        const response = await fetch(`/api/repos/${owner}/${repoName}/move`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: target.path,
+            to,
+            fromSha: target.sha,
+            message: `Rename ${target.path}`,
+          }),
+        })
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}))
+          throw new Error(error.error || 'Failed to rename file')
+        }
+        const result = await response.json()
+
+        // Keep following the renamed file when it is the one open in the editor.
+        setSelectedFile(current =>
+          current && current.owner === owner && current.repo === repoName && current.path === target.path
+            ? { ...current, path: result.path, sha: result.sha, storedPath: undefined }
+            : current
+        )
+        showNotice('success', `Renamed ${target.label} to ${newName}`)
+        // Re-read the tree, with the renamed file revealed under its new name.
+        window.__fileTreeRefresh?.(result.path)
+      } catch (error) {
+        console.error('Error renaming file:', error)
+        showNotice(
+          'error',
+          `Failed to rename file: ${error instanceof Error ? error.message : 'Unknown error'}`
+        )
+      } finally {
+        setIsLoading(false)
+      }
+    })()
+  }
+
   const handleSaveFile = async (content: string) => {
     if (!selectedFile) return
 
@@ -701,8 +797,10 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
 
       const shownPath = selectedFile.isNew ? selectedFile.path : (selectedDisplayPath ?? savePath)
       showNotice('success', `Saved ${shownPath}`)
-      // Refresh the file tree so newly created files show up immediately.
-      window.__fileTreeRefresh?.()
+      // Refresh the file tree so newly created files show up immediately. A new
+      // file is revealed: its folders are opened, so a file created at a nested
+      // path is visible even when every folder above it was collapsed.
+      window.__fileTreeRefresh?.(selectedFile.isNew ? savePath : undefined)
     }
 
     try {
@@ -735,10 +833,25 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         // A new file's name is encrypted when the repository has a name key
         // (see `openFilenameKey`). An opened file keeps the stored path it was
         // loaded from, which is a `.age` path for every encrypted file.
+        //
+        // Inside a folder the tree showed, only the file's own name is
+        // encrypted. That folder keeps the stored name it already has — a plain
+        // one, for a folder created while the repository was locked or one that
+        // predates encrypted names — the way `name-migration.ts` renames a file
+        // in place and leaves its folder alone. Encrypting the folder segment
+        // again would write the file into a second, encrypted-name folder with
+        // the same label, leaving the folder the user clicked empty. A name
+        // typed at the repository root has no stored folder to keep, so its
+        // folder segments are encrypted instead.
+        const storedFolder =
+          selectedFile.storedPath?.split('/').slice(0, -1).join('/') ?? null
+        const name = selectedFile.path.split('/').pop() ?? selectedFile.path
         const savePath = selectedFile.isNew
           ? nameKey
-            ? await encryptRepoPath(selectedFile.path, nameKey)
-            : `${selectedFile.path}.age`
+            ? storedFolder !== null
+              ? `${storedFolder}/${await encryptEntryName(name, nameKey)}.age`
+              : await encryptRepoPath(selectedFile.path, nameKey)
+            : `${selectedFile.storedPath ?? selectedFile.path}.age`
           : selectedFile.path
 
         await saveToGitHub(savePath, encryptedContent, true)
@@ -933,6 +1046,22 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         }
         onSubmit={handleCreateSubmit}
       />
+      <InputDialog
+        open={renameTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRenameTarget(null)
+        }}
+        title="Rename File"
+        description={
+          renameTarget
+            ? `Rename "${renameTarget.label}". The file keeps its content and stays in its folder.`
+            : ''
+        }
+        label="New name"
+        defaultValue={renameTarget?.label ?? ''}
+        submitLabel="Rename"
+        onSubmit={handleRenameSubmit}
+      />
       <AppSidebar
         repositories={repositories}
         userName={userName}
@@ -940,6 +1069,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         userEmail={userEmail}
         onFileSelect={handleFileSelect}
         onCreateEntry={handleCreateEntry}
+        onRenameFile={handleRenameFile}
         onRepoChange={setSelectedRepo}
         onUnlockRepo={handleUnlockRepo}
         onLockRepo={handleLockRepo}

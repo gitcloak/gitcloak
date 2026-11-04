@@ -321,6 +321,81 @@ test.describe('Folders in the file tree', () => {
     await expect(page.locator('[data-testid="file-node"][data-name=".gitkeep"]')).toHaveCount(0)
   })
 
+  test('shows a new file created inside a newly created folder', async ({ page, request }) => {
+    await gotoApp(page)
+    await page.getByTestId('repo-lock-toggle').click()
+    await submitPassword(page, 'unlock', 'demo-password')
+
+    // A folder at the root, then a file inside it. The refresh after the save
+    // must open the folder so the new file is visible without another click.
+    await rootNewFolderButton(page).click()
+    await page.getByTestId('new-file-input').fill('projects')
+    await page.getByTestId('new-file-submit').click()
+    await expect(page.getByTestId('notice')).toContainText('Created folder projects')
+
+    const folder = page.locator('[data-testid="file-node"][data-name="projects"]')
+    await folder.locator('[data-testid="tree-new-file-button"]').click()
+    await page.getByTestId('new-file-input').fill('todo.md')
+    await page.getByTestId('new-file-submit').click()
+    await fillEditor(page, '# Todo\n')
+    await page.getByTestId('save-button').click()
+    await expect(page.getByTestId('notice')).toContainText('Saved projects/todo.md')
+
+    // The file is rendered inside its folder, which means the folder is open.
+    const storedFile = await storedPathOf(page, 'todo.md')
+    expect(storedFile.split('/')).toHaveLength(2)
+    await expect(
+      page.locator(`[data-testid="file-node"][data-path="${storedFile}"]`)
+    ).toBeVisible()
+    const files = (await fetchMockState(request))['mockuser/demo-notes']
+    expect(files[storedFile]).toContain('-----BEGIN AGE ENCRYPTED FILE-----')
+  })
+
+  test('reveals a file created at a nested path typed into the root dialog', async ({ page }) => {
+    await gotoApp(page)
+    await page.getByTestId('repo-lock-toggle').click()
+    await submitPassword(page, 'unlock', 'demo-password')
+
+    // The dialog accepts a path with several segments, so the folders above the
+    // file come into being with it. Both must be opened for the file to show.
+    await rootNewFileButton(page).click()
+    await page.getByTestId('new-file-input').fill('docs/guide/setup.md')
+    await page.getByTestId('new-file-submit').click()
+    await fillEditor(page, '# Setup\n')
+    await page.getByTestId('save-button').click()
+    await expect(page.getByTestId('notice')).toContainText('Saved docs/guide/setup.md')
+
+    await expect(page.locator('[data-testid="file-node"][data-name="docs"]')).toBeVisible()
+    await expect(page.locator('[data-testid="file-node"][data-name="guide"]')).toBeVisible()
+    await expect(page.locator('[data-testid="file-node"][data-name="setup.md"]')).toBeVisible()
+  })
+
+  test('reveals a plain file created at a nested path while the repository is locked', async ({
+    page,
+    request,
+  }) => {
+    await gotoApp(page)
+    await expect(page.getByTestId('repo-lock-status')).toContainText('Locked')
+
+    await rootNewFileButton(page).click()
+    // At the root both choices are offered; while locked, Plain is the one that
+    // needs no password.
+    await page.getByTestId('new-file-encryption-plain').click()
+    await page.getByTestId('new-file-input').fill('drafts/deep.md')
+    await page.getByTestId('new-file-submit').click()
+    await fillEditor(page, '# Deep\n')
+    await page.getByTestId('save-button').click()
+    await expect(page.getByTestId('notice')).toContainText('Saved drafts/deep.md')
+
+    // Stored plainly, in a folder of its own, and shown without a further click.
+    const files = (await fetchMockState(request))['mockuser/demo-notes']
+    expect(files['drafts/deep.md']).toContain('Deep')
+    await expect(page.locator('[data-testid="file-node"][data-name="drafts"]')).toBeVisible()
+    await expect(
+      page.locator('[data-testid="file-node"][data-path="drafts/deep.md"]')
+    ).toBeVisible()
+  })
+
   test('rejects the reserved placeholder name', async ({ page }) => {
     await gotoApp(page)
 

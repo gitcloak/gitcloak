@@ -19,7 +19,8 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 - **Interoperable**: Uses age format - decrypt your files anywhere with age-compatible tools
 - **Real-time Editing**: Edit files with live status updates and background saving
 - **Live Markdown**: Headings, emphasis, links, lists, quotes and code render as you type, Obsidian-style; the stored file is always the plain Markdown you wrote. A Source/Rendered toggle switches to the raw text; non-Markdown files always show raw text
-- **File Tree Navigation**: Browse and manage your repository files easily
+- **File Tree Navigation**: Browse and manage your repository files easily. A newly created file appears in the tree right away, opening the folders above it even when they were collapsed
+- **Rename Files**: Rename any file from the pen next to its name in the tree. The file keeps its content and stays in its folder; renaming an encrypted file re-encrypts its stored name, so the new name stays hidden on GitHub
 - **Responsive Shell**: Collapsible sidebar that becomes an off-canvas sheet on mobile
 - **Dark Mode**: Light/dark/system themes via `next-themes`, chosen in Settings
 - **Autosave**: Optionally save a moment after you stop typing (Settings → Editor)
@@ -31,7 +32,8 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 2. **Select** a repository you want to work with
 3. **Create or edit** files - choose Encrypted (the default) or Plain for each new file. Encrypted files are age-encrypted, under encrypted names too. You can add a file inside any folder without unlocking; if the repository is locked (or not set up yet), the only choice is Plain. A new folder works the same way: without the password it is created as a plain folder
 4. **Set a password** the first time you save an encrypted file in a repository
-5. **Files are saved** to GitHub: encrypted files with a `.age` extension, fully encrypted, under encrypted names; plain files exactly as you wrote them
+5. **Rename** a file with the pen next to its name in the tree; it keeps its content and its folder, and an encrypted file gets a fresh encrypted name
+6. **Files are saved** to GitHub: encrypted files with a `.age` extension, fully encrypted, under encrypted names; plain files exactly as you wrote them. The editor header shows the repository and the open file's full path on one line, with just the file's own name as the title
 
 Your files remain in your GitHub repository, but the encrypted ones are encrypted at rest. Only someone with the repository password can decrypt them, and only the repository password reveals their names. Plain files are readable by anyone who can read the repository.
 
@@ -41,7 +43,7 @@ Your files remain in your GitHub repository, but the encrypted ones are encrypte
 - **Password Verification**: Uses encrypted challenge string (never stores password)
 - **Client-Side Only**: All crypto operations happen in your browser
 - **Memory-Only Storage**: Passwords stored only in browser memory during session
-- **Encrypted File Names**: File names are encrypted with a key that is itself protected by the repository password. Locked, GitHub and the file tree only show the encrypted names. Unlocking a repository renames its older `.age` files to encrypted names too
+- **Encrypted File Names**: File names are encrypted with a key that is itself protected by the repository password. Locked, GitHub and the file tree only show the encrypted names. Unlocking a repository renames its older `.age` files to encrypted names too, and renaming an encrypted file re-encrypts its stored name
 - **GitHub OAuth**: No password storage, uses GitHub's authentication
 
 Not hidden: folder names, the names and full contents of files you created as plain, the number of files and folders, folder depth, file sizes, commit times, and commit messages (which contain the stored names).

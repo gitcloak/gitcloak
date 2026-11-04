@@ -100,11 +100,20 @@ test.describe('Encrypted file names', () => {
     expect(file).not.toBe('plan.md.age')
     expect(Object.keys(files).some((path) => path.split('/').includes('archive'))).toBe(false)
 
-    // The tree shows the plain folder, which expands to the plain file.
+    // The tree shows the plain folder, already opened on the new file.
     const archive = page.locator(
       '[data-testid="file-node"][data-name="archive"][data-node-type="dir"]'
     )
     await expect(archive).toBeVisible()
+    await expect(
+      page.locator('[data-testid="file-node"][data-name="plan.md"]')
+    ).toBeVisible()
+
+    // It still toggles: collapsing hides the file, expanding brings it back.
+    await archive.click()
+    await expect(
+      page.locator('[data-testid="file-node"][data-name="plan.md"]')
+    ).toHaveCount(0)
     await archive.click()
     await expect(
       page.locator('[data-testid="file-node"][data-name="plan.md"]')

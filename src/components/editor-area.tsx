@@ -67,6 +67,10 @@ export function EditorArea({
 
   const hasChanges = content !== savedContent
   const hasFile = Boolean(selectedFile)
+  // What the header shows for the open file: the full path sits beside the
+  // repository name, while the title is only the file's own name.
+  const shownPath = selectedFile ? displayPath ?? selectedFile.path : null
+  const shownName = shownPath ? shownPath.split('/').pop() ?? shownPath : null
   // Markdown can be shown rendered or as source; the choice resets with each
   // opened file because this component is keyed by `openId`. Other files are
   // always shown as source, since rendering would misread e.g. `# comments`.
@@ -151,13 +155,20 @@ export function EditorArea({
         />
 
         <div className="min-w-0 flex-1">
-          <div
-            data-testid="editor-repo"
-            className="truncate text-xs text-gc-fg-muted"
-          >
-            {selectedFile
-              ? `${selectedFile.owner}/${selectedFile.repo}`
-              : 'No file selected'}
+          <div className="flex min-w-0 items-center gap-1.5 text-xs text-gc-fg-muted">
+            <span data-testid="editor-repo" className="shrink-0">
+              {selectedFile
+                ? `${selectedFile.owner}/${selectedFile.repo}`
+                : 'No file selected'}
+            </span>
+            {shownPath && (
+              <>
+                <span className="shrink-0">/</span>
+                <span data-testid="selected-file-path" className="truncate">
+                  {shownPath}
+                </span>
+              </>
+            )}
           </div>
           <div
             data-testid="editor-title"
@@ -165,8 +176,8 @@ export function EditorArea({
           >
             {selectedFile ? (
               <>
-                <span data-testid="selected-file-path" className="truncate">
-                  {displayPath ?? selectedFile.path}
+                <span data-testid="selected-file-name" className="truncate">
+                  {shownName}
                 </span>
                 {selectedFile.isNew && (
                   <span className="shrink-0 rounded-gc-sm bg-gc-success-bg px-2 py-0.5 text-xs font-medium text-gc-success-fg">

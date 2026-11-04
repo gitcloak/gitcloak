@@ -34,6 +34,8 @@ interface InputDialogProps {
   label: string
   placeholder?: string
   defaultValue?: string
+  /** Text of the submit button. */
+  submitLabel?: string
   /** Optional single-choice question, e.g. encrypted or plain. */
   choice?: InputDialogChoice
   onSubmit: (value: string) => void
@@ -47,6 +49,7 @@ export function InputDialog({
   label,
   placeholder,
   defaultValue = "",
+  submitLabel = "Create",
   choice,
   onSubmit,
 }: InputDialogProps) {
@@ -129,7 +132,7 @@ export function InputDialog({
               Cancel
             </Button>
             <Button type="submit" data-testid="new-file-submit" disabled={!value.trim()}>
-              Create
+              {submitLabel}
             </Button>
           </DialogFooter>
         </form>

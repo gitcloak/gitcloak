@@ -107,21 +107,56 @@ test.describe('Backend API contract', () => {
     expect(state[repo]['ideas.md.age']).toBeDefined()
   })
 
-  test('move refuses plain files, .gitcloak and the same path', async ({ request }) => {
-    const plain = await request.post('/api/repos/mockuser/demo-notes/move', {
-      data: { from: 'README.md', to: 'x.age', fromSha: 'a'.repeat(40) },
-    })
-    expect(plain.status()).toBe(400)
+  test('move renames a plain file in place, keeping its bytes', async ({ request }) => {
+    const repo = 'mockuser/demo-notes'
+    const before = await fetchMockState(request)
+    const original = before[repo]['notes/todo.md']
+    const listing = await request.get(`/api/repos/${repo}/contents?path=notes`)
+    const sha = (await listing.json()).find(
+      (entry: { path: string }) => entry.path === 'notes/todo.md'
+    ).sha
 
-    const gitcloak = await request.post('/api/repos/mockuser/demo-notes/move', {
-      data: { from: '.gitcloak', to: 'x.age', fromSha: 'a'.repeat(40) },
+    const move = await request.post(`/api/repos/${repo}/move`, {
+      data: {
+        from: 'notes/todo.md',
+        to: 'notes/backlog.md',
+        fromSha: sha,
+        message: 'Rename notes/todo.md',
+      },
     })
-    expect(gitcloak.status()).toBe(400)
+    expect(move.status()).toBe(200)
+    expect((await move.json()).path).toBe('notes/backlog.md')
 
-    const same = await request.post('/api/repos/mockuser/demo-notes/move', {
-      data: { from: 'welcome.md.age', to: 'welcome.md.age', fromSha: 'a'.repeat(40) },
-    })
-    expect(same.status()).toBe(400)
+    // Same folder, same bytes, under the new name only.
+    const state = await fetchMockState(request)
+    expect(state[repo]['notes/todo.md']).toBeUndefined()
+    expect(state[repo]['notes/backlog.md']).toBe(original)
+  })
+
+  test('move refuses cross-kind renames, .gitcloak, .gitkeep and the same path', async ({
+    request,
+  }) => {
+    const repo = 'mockuser/demo-notes'
+    const bad = [
+      // The `.age` extension is what marks a file as encrypted, so a rename
+      // may not add it to a plain file or drop it from an encrypted one.
+      { from: 'README.md', to: 'x.age' },
+      { from: 'welcome.md.age', to: 'welcome.md' },
+      // The repository metadata and a folder's placeholder are never moved.
+      { from: '.gitcloak', to: 'x.age' },
+      { from: 'welcome.md.age', to: '.gitcloak' },
+      { from: 'notes/todo.md', to: 'notes/.gitkeep' },
+      // A rename must change the name.
+      { from: 'welcome.md.age', to: 'welcome.md.age' },
+      // And the commit message is validated when one is given.
+      { from: 'welcome.md.age', to: 'moved.age', message: 'x'.repeat(201) },
+    ]
+    for (const data of bad) {
+      const response = await request.post(`/api/repos/${repo}/move`, {
+        data: { ...data, fromSha: 'a'.repeat(40) },
+      })
+      expect(response.status(), JSON.stringify(data)).toBe(400)
+    }
   })
 
   test('save rejects plaintext, non-.age paths and workflow paths', async ({ request }) => {

@@ -113,26 +113,49 @@ describe('validateSavePayload', () => {
 })
 
 describe('validateMovePayload', () => {
-  it('accepts renaming a .age file to another .age path', () => {
+  it('accepts renaming an encrypted file to another encrypted path', () => {
     expect(
       validateMovePayload({ from: 'welcome.md.age', to: 'k3ql2w7ue6cx.age', fromSha: SHA })
-    ).toEqual({ from: 'welcome.md.age', to: 'k3ql2w7ue6cx.age', fromSha: SHA })
+    ).toEqual({ from: 'welcome.md.age', to: 'k3ql2w7ue6cx.age', fromSha: SHA, message: undefined })
   })
 
-  it('rejects moving anything that is not an .age file, including .gitcloak', () => {
+  it('accepts renaming a plain file to another plain path', () => {
+    expect(
+      validateMovePayload({ from: 'notes/todo.md', to: 'notes/backlog.md', fromSha: SHA })
+    ).toEqual({
+      from: 'notes/todo.md',
+      to: 'notes/backlog.md',
+      fromSha: SHA,
+      message: undefined,
+    })
+  })
+
+  it('rejects a rename that changes whether a file is encrypted', () => {
+    // The `.age` extension is what marks a file as encrypted, so it must stay.
     expect(() => validateMovePayload({ from: 'README.md', to: 'x.age', fromSha: SHA })).toThrow(
-      'Only .age files can be renamed'
+      'cannot change whether a file is encrypted'
     )
-    expect(() => validateMovePayload({ from: '.gitcloak', to: 'x.age', fromSha: SHA })).toThrow(
-      'Only .age files can be renamed'
+    expect(() => validateMovePayload({ from: 'a.age', to: 'plain.md', fromSha: SHA })).toThrow(
+      'cannot change whether a file is encrypted'
     )
   })
 
-  it('rejects targets that are not encrypted files or live under .github', () => {
-    expect(() => validateMovePayload({ from: 'a.age', to: 'plain.md', fromSha: SHA })).toThrow(
-      'Only .age files can be renamed'
+  it('rejects renaming .gitcloak or a folder placeholder', () => {
+    expect(() => validateMovePayload({ from: '.gitcloak', to: 'x.age', fromSha: SHA })).toThrow(
+      'Only files can be renamed'
     )
-    expect(() => validateMovePayload({ from: 'a.age', to: '.gitcloak', fromSha: SHA })).toThrow()
+    expect(() => validateMovePayload({ from: 'a.age', to: '.gitcloak', fromSha: SHA })).toThrow(
+      'Only files can be renamed'
+    )
+    expect(() =>
+      validateMovePayload({ from: 'notes/.gitkeep', to: 'notes/x.md', fromSha: SHA })
+    ).toThrow('Only files can be renamed')
+    expect(() => validateMovePayload({ from: 'a.md', to: '.gitkeep', fromSha: SHA })).toThrow(
+      'Only files can be renamed'
+    )
+  })
+
+  it('rejects targets that live under .github', () => {
     expect(() =>
       validateMovePayload({ from: 'a.age', to: '.github/x.age', fromSha: SHA })
     ).toThrow('Writing to .github is not allowed')
@@ -146,6 +169,27 @@ describe('validateMovePayload', () => {
     expect(() => validateMovePayload({ from: 'a.age', to: 'a.age', fromSha: SHA })).toThrow(
       'must differ'
     )
+  })
+
+  it('carries an optional commit message and rejects a bad one', () => {
+    expect(
+      validateMovePayload({
+        from: 'a.age',
+        to: 'b.age',
+        fromSha: SHA,
+        message: 'Rename a.age',
+      }).message
+    ).toBe('Rename a.age')
+    // An empty message is treated as absent, not as an error.
+    expect(
+      validateMovePayload({ from: 'a.age', to: 'b.age', fromSha: SHA, message: '' }).message
+    ).toBeUndefined()
+    expect(() =>
+      validateMovePayload({ from: 'a.age', to: 'b.age', fromSha: SHA, message: 'x'.repeat(201) })
+    ).toThrow('Invalid commit message')
+    expect(() =>
+      validateMovePayload({ from: 'a.age', to: 'b.age', fromSha: SHA, message: 'bad\nline' })
+    ).toThrow('Invalid commit message')
   })
 })
 
