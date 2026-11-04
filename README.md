@@ -20,7 +20,7 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 - **Real-time Editing**: Edit files with live status updates and background saving
 - **Live Markdown**: Headings, emphasis, links, lists, quotes and code render as you type, Obsidian-style; the stored file is always the plain Markdown you wrote. A Source/Rendered toggle switches to the raw text; non-Markdown files always show raw text
 - **File Tree Navigation**: Browse and manage your repository files easily. A newly created file appears in the tree right away, opening the folders above it even when they were collapsed
-- **Rename Files**: Rename any file from the pen next to its name in the tree. The file keeps its content and stays in its folder; renaming an encrypted file re-encrypts its stored name, so the new name stays hidden on GitHub
+- **Rename & Delete Files**: Rename any file from the pen next to its name in the editor header, or remove it with the trash button beside Save. The file keeps its content and stays in its folder; renaming an encrypted file re-encrypts its stored name, so the new name stays hidden on GitHub, and deleting one addresses only its stored name and current revision
 - **Responsive Shell**: Collapsible sidebar that becomes an off-canvas sheet on mobile
 - **Dark Mode**: Light/dark/system themes via `next-themes`, chosen in Settings
 - **Autosave**: Optionally save a moment after you stop typing (Settings → Editor)
@@ -32,7 +32,7 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 2. **Select** a repository you want to work with
 3. **Create or edit** files - choose Encrypted (the default) or Plain for each new file. Encrypted files are age-encrypted, under encrypted names too. You can add a file inside any folder without unlocking; if the repository is locked (or not set up yet), the only choice is Plain. A new folder works the same way: without the password it is created as a plain folder
 4. **Set a password** the first time you save an encrypted file in a repository
-5. **Rename** a file with the pen next to its name in the tree; it keeps its content and its folder, and an encrypted file gets a fresh encrypted name
+5. **Rename** a file with the pen next to its name in the editor header, or **delete** it with the trash button beside Save. A rename keeps the file's content and its folder, and an encrypted file gets a fresh encrypted name; a delete removes the file from the repository — its contents stay in the repository's Git history
 6. **Files are saved** to GitHub: encrypted files with a `.age` extension, fully encrypted, under encrypted names; plain files exactly as you wrote them. The editor header shows the repository and the open file's full path on one line, with just the file's own name as the title
 
 Your files remain in your GitHub repository, but the encrypted ones are encrypted at rest. Only someone with the repository password can decrypt them, and only the repository password reveals their names. Plain files are readable by anyone who can read the repository.

@@ -6,6 +6,7 @@ import {
   BackendNotFoundError,
   type BackendKind,
   type ContentsResult,
+  type DeleteFileParams,
   type DirectoryEntry,
   type FileBackend,
   type MoveFileParams,
@@ -193,6 +194,29 @@ export class GitFileBackend implements FileBackend {
     await this.octokit.repos.deleteFile({ owner, repo, path: from, message, sha: fromSha })
 
     return { sha: newSha, path: to, name: basename(to) }
+  }
+
+  async deleteFile({
+    owner,
+    repo,
+    path,
+    sha,
+    message,
+  }: DeleteFileParams): Promise<void> {
+    try {
+      await this.octokit.repos.deleteFile({ owner, repo, path, message, sha })
+    } catch (error) {
+      if (isNotFound(error)) {
+        throw new BackendNotFoundError(path)
+      }
+      if (isConflict(error)) {
+        // GitHub answers 409 when the sha no longer matches the file.
+        throw new BackendConflictError(
+          'The file changed on GitHub since it was opened. Reload and try again.'
+        )
+      }
+      throw error
+    }
   }
 
   /** Raw bytes and blob sha of a file, or null when it does not exist. */

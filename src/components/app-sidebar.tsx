@@ -40,7 +40,7 @@ import {
 import type { FilenameKey } from '@/lib/filenames'
 import { cn } from '@/lib/utils'
 
-import { FileTree, type RenameTarget } from './file-tree'
+import { FileTree } from './file-tree'
 
 /** Visual state of the selected repository's lock. */
 export type RepoStatus = 'checking' | 'uninitialized' | 'locked' | 'unlocked'
@@ -113,8 +113,6 @@ interface AppSidebarProps {
     parentPath: string,
     storedParentPath: string | null
   ) => void
-  /** Asks the owner to rename a file the tree shows. */
-  onRenameFile?: (file: RenameTarget) => void
   onRepoChange?: (repo: Repository | null) => void
   onUnlockRepo?: () => void
   onLockRepo?: () => void
@@ -132,7 +130,6 @@ export function AppSidebar({
   userEmail,
   onFileSelect,
   onCreateEntry,
-  onRenameFile,
   onRepoChange,
   onUnlockRepo,
   onLockRepo,
@@ -313,7 +310,6 @@ export function AppSidebar({
                 filenameKey={filenameKey}
                 isUnlocked={isRepoUnlocked}
                 onCreateEntry={onCreateEntry}
-                onRenameFile={onRenameFile}
                 onFileSelect={(path, sha) => {
                   onFileSelect?.(selectedRepo.owner, selectedRepo.name, path, sha)
                 }}

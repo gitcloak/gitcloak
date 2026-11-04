@@ -9,33 +9,17 @@ import {
   FilePlus,
   FolderPlus,
   Lock,
-  Pencil,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { decryptEntryName, decryptRepoPath, FOLDER_PLACEHOLDER, type FilenameKey } from '@/lib/filenames'
 import { cn } from '@/lib/utils'
 
-/** The repository's own metadata file, which is never renamed. */
-const GITCLOAK_FILE = '.gitcloak'
-
 /** A row as stored in the repository. `name` and `path` are what GitHub has. */
 interface TreeNode {
   name: string
   path: string
   type: 'file' | 'dir'
-  sha: string
-}
-
-/** A file the user is renaming. `path` and `name` are as stored; `label` is shown. */
-export interface RenameTarget {
-  /** Stored path of the file. */
-  path: string
-  /** Stored name of the file (with `.age` when it is encrypted). */
-  name: string
-  /** Name the tree shows (decrypted while the repository is unlocked). */
-  label: string
-  /** Blob sha of the file, passed to the move so a stale rename is refused. */
   sha: string
 }
 
@@ -58,8 +42,6 @@ interface FileTreeProps {
     parentPath: string,
     storedParentPath: string | null
   ) => void
-  /** Asks the owner to rename a file. */
-  onRenameFile?: (file: RenameTarget) => void
   onRefresh?: () => void
   selectedFilePath?: string
   onLoadingChange?: (isLoading: boolean) => void
@@ -151,7 +133,6 @@ export function FileTree({
   isUnlocked = false,
   onFileSelect,
   onCreateEntry,
-  onRenameFile,
   onRefresh,
   selectedFilePath,
   onLoadingChange,
@@ -383,7 +364,7 @@ export function FileTree({
               </span>
             )}
             <span className="truncate">{label}</span>
-            {isDir ? (
+            {isDir && (
               <RowActions
                 where={label}
                 path={node.path}
@@ -391,39 +372,6 @@ export function FileTree({
                 onAddFile={() => void createIn('file', node)}
                 onAddFolder={() => void createIn('folder', node)}
               />
-            ) : (
-              // A rename needs the plain name. A plain file always has it; an
-              // encrypted one only once the repository is unlocked, since
-              // otherwise the tree shows its stored name. `.gitcloak` is the
-              // repository's own metadata and the server refuses to move it.
-              onRenameFile &&
-              node.name !== GITCLOAK_FILE &&
-              (!isProtected || filenameKey) && (
-                <span
-                  className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
-                  // The button sits inside a clickable row; it must not also open it.
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <Button
-                    data-testid="tree-rename-button"
-                    data-path={node.path}
-                    variant="ghost"
-                    size="icon-xs"
-                    title={`Rename ${label}`}
-                    aria-label={`Rename ${label}`}
-                    onClick={() =>
-                      onRenameFile({
-                        path: node.path,
-                        name: node.name,
-                        label,
-                        sha: node.sha,
-                      })
-                    }
-                  >
-                    <Pencil className="size-3" />
-                  </Button>
-                </span>
-              )
             )}
           </div>
 

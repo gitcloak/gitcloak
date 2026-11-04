@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createGitCloakFile } from '@/lib/gitcloak'
 import {
   isSameOrigin,
+  validateDeletePayload,
   validateMovePayload,
   validateOwnerRepo,
   validatePath,
@@ -189,6 +190,60 @@ describe('validateMovePayload', () => {
     ).toThrow('Invalid commit message')
     expect(() =>
       validateMovePayload({ from: 'a.age', to: 'b.age', fromSha: SHA, message: 'bad\nline' })
+    ).toThrow('Invalid commit message')
+  })
+})
+
+describe('validateDeletePayload', () => {
+  it('accepts deleting a plain file or an encrypted one by its stored path', () => {
+    expect(validateDeletePayload({ path: 'README.md', sha: SHA })).toEqual({
+      path: 'README.md',
+      sha: SHA,
+      message: undefined,
+    })
+    expect(validateDeletePayload({ path: 'notes/secret.md.age', sha: SHA })).toEqual({
+      path: 'notes/secret.md.age',
+      sha: SHA,
+      message: undefined,
+    })
+  })
+
+  it('requires the sha of the blob the caller last saw', () => {
+    // Without it a stale editor could not be told apart from a fresh one.
+    expect(() => validateDeletePayload({ path: 'README.md' })).toThrow('Invalid sha')
+    expect(() => validateDeletePayload({ path: 'README.md', sha: '' })).toThrow('Invalid sha')
+    expect(() => validateDeletePayload({ path: 'README.md', sha: 'nope' })).toThrow('Invalid sha')
+  })
+
+  it('refuses .gitcloak and a folder placeholder', () => {
+    expect(() => validateDeletePayload({ path: '.gitcloak', sha: SHA })).toThrow(
+      'Only files can be deleted'
+    )
+    expect(() => validateDeletePayload({ path: 'notes/.gitkeep', sha: SHA })).toThrow(
+      'Only files can be deleted'
+    )
+  })
+
+  it('refuses paths under .github and traversal', () => {
+    expect(() => validateDeletePayload({ path: '.github/workflows/x.yml.age', sha: SHA })).toThrow(
+      'Writing to .github is not allowed'
+    )
+    expect(() => validateDeletePayload({ path: '../escape.md', sha: SHA })).toThrow()
+  })
+
+  it('rejects a body that is not an object and carries a validated message', () => {
+    expect(() => validateDeletePayload(null)).toThrow()
+    expect(() => validateDeletePayload([])).toThrow()
+    expect(validateDeletePayload({ path: 'README.md', sha: SHA, message: 'Remove it' }).message).toBe(
+      'Remove it'
+    )
+    // An empty message is absent, and a bad one is refused like everywhere else.
+    expect(validateDeletePayload({ path: 'README.md', sha: SHA, message: '' }).message).toBeUndefined()
+    expect(() =>
+      validateDeletePayload({ path: 'README.md', sha: SHA, message: 'x'.repeat(201) })
+    ).toThrow('Invalid commit message')
+    expect(() =>
+      validateDeletePayload({ path: 'README.md', sha: SHA, message: 'bad\nline' })
     ).toThrow('Invalid commit message')
   })
 })

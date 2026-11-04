@@ -1,13 +1,13 @@
 'use client'
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { AlertCircle, KeyRound, Lock, ShieldCheck } from 'lucide-react'
+import { AlertCircle, KeyRound, Lock, ShieldCheck, Trash2 } from 'lucide-react'
 import { AppSidebar, type RepoStatus } from '@/components/app-sidebar'
-import type { RenameTarget } from '@/components/file-tree'
 import { EditorArea } from '@/components/editor-area'
 import { LoadingOverlay } from '@/components/loading-overlay'
 import { PasswordDialog } from '@/components/password-dialog'
 import { InputDialog } from '@/components/input-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { NoticeToast, type Notice } from '@/components/notice-toast'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { SidebarInset } from '@/components/ui/sidebar'
@@ -24,6 +24,24 @@ interface Repository {
   private: boolean
   description: string | null
   updatedAt: string
+}
+
+/**
+ * The repository's own metadata file. It is never renamed or deleted: it holds
+ * the name key, and the server refuses to move or remove it.
+ */
+const GITCLOAK_FILE = '.gitcloak'
+
+/** A file the editor can act on, built from the open file and what the header shows. */
+interface FileActionTarget {
+  /** Stored path of the file. */
+  path: string
+  /** Stored name of the file (with `.age` when it is encrypted). */
+  name: string
+  /** Name shown for the file (decrypted while the repository is unlocked). */
+  label: string
+  /** Blob sha of the file, so a stale rename or delete is refused. */
+  sha: string
 }
 
 interface SelectedFile {
@@ -152,8 +170,9 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [autosave, setAutosave] = useAutosave()
-  // The file to rename, or null while the rename dialog is closed.
-  const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null)
+  // The file each dialog acts on, or null while that dialog is closed.
+  const [renameTarget, setRenameTarget] = useState<FileActionTarget | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<FileActionTarget | null>(null)
 
   const repoKey = selectedRepo ? `${selectedRepo.owner}/${selectedRepo.name}` : null
   // A repository's name key exists only while its password is in memory.
@@ -175,6 +194,36 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
       ? Boolean(repoPasswords[`${selectedFile.owner}/${selectedFile.repo}`])
       : true
     : false
+
+  // What the header shows for the open file, and what a rename or delete acts
+  // on. The stored name is what GitHub has (`.age` when encrypted); the label is
+  // the name shown, which is the plain one once the repository is unlocked.
+  const openFileTarget: FileActionTarget | null = selectedFile
+    ? {
+        path: selectedFile.path,
+        name: selectedFile.path.split('/').pop() ?? selectedFile.path,
+        label: (selectedDisplayPath ?? selectedFile.path).split('/').pop() ?? selectedFile.path,
+        sha: selectedFile.sha,
+      }
+    : null
+
+  // A rename needs the file's plain name, so an encrypted file whose name key is
+  // not in memory (locked, or a repository from before encrypted names) cannot
+  // be renamed — the new stored name is derived from the plain one. A file that
+  // has not been saved yet has no stored blob to move, and `.gitcloak` is the
+  // repository's own metadata, which the server refuses to move.
+  const canRename =
+    Boolean(openFileTarget) &&
+    !selectedFile?.isNew &&
+    openFileTarget?.name !== GITCLOAK_FILE &&
+    (!selectedFile?.encrypted || selectedFileKey !== null)
+
+  // A delete only needs the stored path and sha, so it works while locked. The
+  // same three exclusions apply.
+  const canDelete =
+    Boolean(openFileTarget) &&
+    !selectedFile?.isNew &&
+    openFileTarget?.name !== GITCLOAK_FILE
 
   const showNotice = useCallback((type: Notice['type'], message: string) => {
     setNotice({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, type, message })
@@ -653,10 +702,64 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     })
   }
 
-  /** Open the rename dialog for a file the tree shows. */
-  const handleRenameFile = (file: RenameTarget) => {
-    if (!selectedRepo) return
-    setRenameTarget(file)
+  /** Open the rename dialog for the file the editor shows. */
+  const handleRenameFile = () => {
+    if (openFileTarget) setRenameTarget(openFileTarget)
+  }
+
+  /** Ask before removing the file the editor shows. */
+  const handleDeleteFile = () => {
+    if (openFileTarget) setDeleteTarget(openFileTarget)
+  }
+
+  /**
+   * Delete a file from the repository. The stored bytes go away; the file stays
+   * in the repository's Git history. A plain file and an encrypted one are both
+   * addressed by their stored path, so this needs no password.
+   */
+  const handleDeleteSubmit = () => {
+    const target = deleteTarget
+    if (!selectedRepo || !target) return
+
+    void (async () => {
+      const owner = selectedRepo.owner
+      const repoName = selectedRepo.name
+
+      setLoadingMessage('Deleting file...')
+      setIsLoading(true)
+      try {
+        const response = await fetch(`/api/repos/${owner}/${repoName}/delete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: target.path,
+            sha: target.sha,
+            message: `Delete ${target.path}`,
+          }),
+        })
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}))
+          throw new Error(error.error || 'Failed to delete file')
+        }
+
+        // Close the editor when it still shows the file that was just removed.
+        setSelectedFile(current =>
+          current && current.owner === owner && current.repo === repoName && current.path === target.path
+            ? null
+            : current
+        )
+        showNotice('success', `Deleted ${target.label}`)
+        window.__fileTreeRefresh?.()
+      } catch (error) {
+        console.error('Error deleting file:', error)
+        showNotice(
+          'error',
+          `Failed to delete file: ${error instanceof Error ? error.message : 'Unknown error'}`
+        )
+      } finally {
+        setIsLoading(false)
+      }
+    })()
   }
 
   /**
@@ -1062,6 +1165,22 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         submitLabel="Rename"
         onSubmit={handleRenameSubmit}
       />
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null)
+        }}
+        title="Delete File"
+        description={
+          deleteTarget
+            ? `Delete "${deleteTarget.label}"? It is removed from the repository. Its contents stay in the repository's Git history.`
+            : ''
+        }
+        confirmLabel="Delete"
+        icon={<Trash2 className="size-4" />}
+        testId="delete-file"
+        onConfirm={handleDeleteSubmit}
+      />
       <AppSidebar
         repositories={repositories}
         userName={userName}
@@ -1069,7 +1188,6 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         userEmail={userEmail}
         onFileSelect={handleFileSelect}
         onCreateEntry={handleCreateEntry}
-        onRenameFile={handleRenameFile}
         onRepoChange={setSelectedRepo}
         onUnlockRepo={handleUnlockRepo}
         onLockRepo={handleLockRepo}
@@ -1093,6 +1211,10 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           autosave={autosave}
           canAutosave={canAutosave}
           onSave={handleSaveFile}
+          canRename={canRename}
+          onRename={handleRenameFile}
+          canDelete={canDelete}
+          onDelete={handleDeleteFile}
         />
       </SidebarInset>
     </>

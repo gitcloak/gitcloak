@@ -117,6 +117,26 @@ function validateGitCloakContent(content: string): void {
   }
 }
 
+/**
+ * A commit message is optional wherever it is accepted. An empty one is treated
+ * as absent, and anything longer than `MAX_MESSAGE_LENGTH` or carrying control
+ * characters is refused, so it can never break the commit or smuggle a newline
+ * into it.
+ */
+function validateCommitMessage(message: unknown): string | undefined {
+  if (message === undefined || message === null || message === '') {
+    return undefined
+  }
+  if (
+    typeof message !== 'string' ||
+    message.length > MAX_MESSAGE_LENGTH ||
+    CONTROL_CHARS.test(message)
+  ) {
+    throw new ValidationError('Invalid commit message')
+  }
+  return message
+}
+
 export interface SavePayload {
   path: string
   content: string
@@ -149,17 +169,7 @@ export function validateSavePayload(body: unknown): SavePayload {
     throw new ValidationError('Refusing to store content that is not age-encrypted')
   }
 
-  let validMessage: string | undefined
-  if (message !== undefined && message !== null && message !== '') {
-    if (
-      typeof message !== 'string' ||
-      message.length > MAX_MESSAGE_LENGTH ||
-      CONTROL_CHARS.test(message)
-    ) {
-      throw new ValidationError('Invalid commit message')
-    }
-    validMessage = message
-  }
+  const validMessage = validateCommitMessage(message)
 
   let validSha: string | undefined
   if (sha !== undefined && sha !== null && sha !== '') {
@@ -222,19 +232,41 @@ export function validateMovePayload(body: unknown): MovePayload {
     throw new ValidationError('Invalid sha')
   }
 
-  let validMessage: string | undefined
-  if (message !== undefined && message !== null && message !== '') {
-    if (
-      typeof message !== 'string' ||
-      message.length > MAX_MESSAGE_LENGTH ||
-      CONTROL_CHARS.test(message)
-    ) {
-      throw new ValidationError('Invalid commit message')
-    }
-    validMessage = message
+  return { from: validFrom, to: validTo, fromSha, message: validateCommitMessage(message) }
+}
+
+export interface DeletePayload {
+  path: string
+  sha: string
+  message?: string
+}
+
+/**
+ * Validate deleting a file. The path must be a file: `.gitcloak` holds the
+ * repository's name key and a folder's `.gitkeep` placeholder is the only thing
+ * keeping that folder in the repository, so neither may be removed here. The
+ * sha is required — it is the blob the caller last saw, and the backend refuses
+ * the delete when the file has changed since, so a stale editor can never
+ * remove someone else's work.
+ */
+export function validateDeletePayload(body: unknown): DeletePayload {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new ValidationError('Invalid request body')
+  }
+  const { path, sha, message } = body as Record<string, unknown>
+
+  const validPath = validatePath(path)
+  if (validPath === GITCLOAK_FILE || basename(validPath) === FOLDER_PLACEHOLDER) {
+    throw new ValidationError('Only files can be deleted')
+  }
+  if (validPath.split('/')[0].toLowerCase() === '.github') {
+    throw new ValidationError('Writing to .github is not allowed')
+  }
+  if (typeof sha !== 'string' || !SHA_PATTERN.test(sha)) {
+    throw new ValidationError('Invalid sha')
   }
 
-  return { from: validFrom, to: validTo, fromSha, message: validMessage }
+  return { path: validPath, sha, message: validateCommitMessage(message) }
 }
 
 /**

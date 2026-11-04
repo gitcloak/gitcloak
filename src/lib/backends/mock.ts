@@ -7,6 +7,7 @@ import {
   BackendNotFoundError,
   type BackendKind,
   type ContentsResult,
+  type DeleteFileParams,
   type DirectoryEntry,
   type FileBackend,
   type MoveFileParams,
@@ -290,6 +291,22 @@ class MockFileBackend implements FileBackend {
 
     state.summary.updatedAt = new Date().toISOString()
     return { sha: sha1(content), path: to, name: basename(to) }
+  }
+
+  async deleteFile({ owner, repo, path, sha }: DeleteFileParams): Promise<void> {
+    const state = await this.findRepo(owner, repo)
+    const content = state.files.get(path)
+    if (content === undefined) {
+      throw new BackendNotFoundError(path)
+    }
+    if (sha1(content) !== sha) {
+      throw new BackendConflictError(
+        'The file changed on GitHub since it was opened. Reload and try again.'
+      )
+    }
+
+    state.files.delete(path)
+    state.summary.updatedAt = new Date().toISOString()
   }
 
   /** Snapshot of every file so the test harness can assert stored content. */

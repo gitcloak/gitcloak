@@ -17,16 +17,6 @@ const PASSWORD = 'demo-password'
 
 const fileRow = (path: string) =>
   `[data-testid="file-node"][data-path="${path}"]`
-const renameButton = (path: string) =>
-  `${fileRow(path)} [data-testid="tree-rename-button"]`
-
-/** Open the rename dialog for a file by clicking the pen next to its row. */
-async function openRename(page: Page, path: string) {
-  await page.locator(fileRow(path)).hover()
-  await page.locator(renameButton(path)).click()
-  await expect(page.getByTestId('new-file-title')).toHaveText('Rename File')
-  await expect(page.getByTestId('new-file-submit')).toHaveText('Rename')
-}
 
 /**
  * Unlock the selected repository and wait for the dialog to close. Unlocking
@@ -41,6 +31,19 @@ async function unlock(page: Page) {
     'data-repo-status',
     'unlocked'
   )
+}
+
+/** Start a rename from the pen in the header and wait for the dialog. */
+async function renameOpenFile(page: Page) {
+  await page.getByTestId('header-rename-button').click()
+  await expect(page.getByTestId('new-file-title')).toHaveText('Rename File')
+  await expect(page.getByTestId('new-file-submit')).toHaveText('Rename')
+}
+
+/** Open a file in the tree, then start its rename from the header. */
+async function openRename(page: Page, path: string) {
+  await page.locator(fileRow(path)).click()
+  await renameOpenFile(page)
 }
 
 test.describe('Renaming a file', () => {
@@ -63,8 +66,10 @@ test.describe('Renaming a file', () => {
     expect(files['readme.md']).toContain('Demo Notes')
     expect(files['readme.md.age']).toBeUndefined()
 
-    // The tree shows the new name and the repository is still locked.
+    // The tree shows the new name, the header follows, and the repository is
+    // still locked.
     await expect(page.locator(fileRow('readme.md'))).toBeVisible()
+    await expect(page.getByTestId('selected-file-name')).toHaveText('readme.md')
     await expect(page.getByTestId('repo-lock-status')).toHaveAttribute(
       'data-repo-status',
       'locked'
@@ -106,11 +111,10 @@ test.describe('Renaming a file', () => {
     const original = (await fetchMockState(request))[REPO][storedPath]
     expect(original).toContain('-----BEGIN AGE ENCRYPTED FILE-----')
 
-    // Follow the file in the editor so the header can be checked after the move.
+    // Open the file by its plain name, then rename it from the header.
     await clickFileByName(page, 'journal.md')
     await expectEditor(page, 'journal.md', /name are encrypted/)
-
-    await openRename(page, storedPath)
+    await renameOpenFile(page)
     await page.getByTestId('new-file-input').fill('diary.md')
     await page.getByTestId('new-file-submit').click()
 
@@ -132,31 +136,34 @@ test.describe('Renaming a file', () => {
     await expect(page.getByTestId('selected-file-name')).toHaveText('diary.md')
   })
 
-  test('offers a rename only when the plain name is known', async ({ page }) => {
+  test('offers a rename only for a file whose plain name is known', async ({ page }) => {
     await gotoApp(page)
-    // Locked, the encrypted files show their stored names and cannot be
-    // renamed, while the plain file next to them can.
-    await expect(page.locator('[data-testid="file-node"][data-protected="true"]')).not.toHaveCount(0)
-    await expect(
-      page.locator('[data-testid="file-node"][data-protected="true"] [data-testid="tree-rename-button"]')
-    ).toHaveCount(0)
-    await expect(page.locator(renameButton('README.md'))).toHaveCount(1)
 
+    // Nothing is open, so the header has no file to act on.
+    await expect(page.getByTestId('header-rename-button')).toHaveCount(0)
+
+    // A plain file can be renamed without the password.
+    await clickFileNode(page, 'README.md')
+    await expect(page.getByTestId('header-rename-button')).toHaveCount(1)
+
+    // The repository's own metadata never is.
+    await clickFileNode(page, '.gitcloak')
+    await expect(page.getByTestId('selected-file-name')).toHaveText('.gitcloak')
+    await expect(page.getByTestId('header-rename-button')).toHaveCount(0)
+
+    // An encrypted file can be renamed once the repository is unlocked, which
+    // is what reveals its plain name.
     await unlock(page)
-    // Unlocked, journal.md shows its plain name and can be renamed.
-    await expect(page.locator(renameButton('README.md'))).toHaveCount(1)
-    await expect(
-      page.locator('[data-testid="file-node"][data-name="journal.md"] [data-testid="tree-rename-button"]')
-    ).toHaveCount(1)
-  })
+    await clickFileByName(page, 'journal.md')
+    await expect(page.getByTestId('header-rename-button')).toHaveCount(1)
 
-  test('never offers to rename .gitcloak', async ({ page }) => {
-    await gotoApp(page)
-    await expect(page.locator(fileRow('.gitcloak'))).toBeVisible()
-    await expect(page.locator(renameButton('.gitcloak'))).toHaveCount(0)
-
-    await unlock(page)
-    await expect(page.locator(renameButton('.gitcloak'))).toHaveCount(0)
+    // Locking again drops the name key, and with it the plain name.
+    await page.getByTestId('repo-lock-toggle').click()
+    await expect(page.getByTestId('repo-lock-status')).toHaveAttribute(
+      'data-repo-status',
+      'locked'
+    )
+    await expect(page.getByTestId('header-rename-button')).toHaveCount(0)
   })
 
   test('refuses a rename that would change whether a file is encrypted', async ({ page }) => {
@@ -178,7 +185,7 @@ test.describe('Renaming a file', () => {
     await page.getByTestId('new-file-submit').click()
     await expect(page.getByTestId('notice')).toContainText('must differ')
 
-    await openRename(page, 'README.md')
+    await renameOpenFile(page)
     await page.getByTestId('new-file-input').fill('notes/README.md')
     await page.getByTestId('new-file-submit').click()
     await expect(page.getByTestId('notice')).toContainText('without "/"')
@@ -193,7 +200,7 @@ test.describe('Renaming a file', () => {
     await clickFileNode(page, 'README.md')
     await expectEditor(page, 'README.md', /Demo Notes/)
 
-    await openRename(page, 'README.md')
+    await renameOpenFile(page)
     await page.getByTestId('new-file-input').fill('notes.md')
     await page.getByTestId('new-file-submit').click()
     await expect(page.getByTestId('notice')).toContainText('Renamed README.md to notes.md')

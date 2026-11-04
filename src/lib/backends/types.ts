@@ -68,6 +68,16 @@ export interface MoveFileParams {
   message: string
 }
 
+export interface DeleteFileParams {
+  owner: string
+  repo: string
+  /** Path of the file to remove. */
+  path: string
+  /** Blob sha of the file as the caller last saw it (optimistic concurrency). */
+  sha: string
+  message: string
+}
+
 export interface SaveResult {
   sha: string
   path: string
@@ -133,4 +143,10 @@ export interface FileBackend {
    * is a conflict and nothing is removed.
    */
   moveFile(params: MoveFileParams): Promise<SaveResult>
+
+  /**
+   * Remove a file. `sha` is the blob the caller last saw; a file that changed
+   * since is a conflict and is left alone.
+   */
+  deleteFile(params: DeleteFileParams): Promise<void>
 }
