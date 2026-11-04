@@ -259,6 +259,68 @@ test.describe('Folders in the file tree', () => {
     }
   })
 
+  test('creates a plain folder inside a folder while the repository is locked', async ({
+    page,
+    request,
+  }) => {
+    await gotoApp(page)
+    await expect(page.getByTestId('repo-lock-status')).toContainText('Locked')
+
+    // `notes` is a plaintext folder in the seed. A folder created inside it while
+    // the repository is locked is stored there, under its own name.
+    await page.locator('[data-testid="file-node"][data-name="notes"]').click()
+    await page
+      .locator('[data-testid="file-node"][data-name="notes"] [data-testid="tree-new-folder-button"]')
+      .click()
+    await expect(page.getByTestId('new-file-title')).toHaveText('Create New Folder')
+    await expect(page.getByTestId('new-file-description')).toContainText('notes')
+    await expect(page.getByTestId('new-file-description')).toContainText('plain folder')
+    await page.getByTestId('new-file-input').fill('drafts')
+    await page.getByTestId('new-file-submit').click()
+
+    await expect(page.getByTestId('notice')).toContainText('Created folder notes/drafts')
+    const files = (await fetchMockState(request))['mockuser/demo-notes']
+    expect(files['notes/drafts/.gitkeep']).toBe('\n')
+    // It stays inside the folder that already existed, plainly named.
+    expect(files['notes/drafts/.gitkeep.age']).toBeUndefined()
+    await expect(page.locator('[data-testid="file-node"][data-name="drafts"]')).toHaveCount(1)
+    await expect(page.locator('[data-testid="file-node"][data-name=".gitkeep"]')).toHaveCount(0)
+  })
+
+  test('creates an encrypted folder inside an encrypted folder', async ({ page, request }) => {
+    await gotoApp(page)
+    await page.getByTestId('repo-lock-toggle').click()
+    await submitPassword(page, 'unlock', 'demo-password')
+
+    await rootNewFolderButton(page).click()
+    await page.getByTestId('new-file-input').fill('projects')
+    await page.getByTestId('new-file-submit').click()
+    await expect(page.getByTestId('notice')).toContainText('Created folder projects')
+
+    // A folder inside it. Its name is derived from the folder's plaintext path,
+    // so it lands in the folder that is already stored, not next to it.
+    const outer = page.locator('[data-testid="file-node"][data-name="projects"]')
+    await outer.locator('[data-testid="tree-new-folder-button"]').click()
+    await expect(page.getByTestId('new-file-title')).toHaveText('Create New Folder')
+    await expect(page.getByTestId('new-file-description')).toContainText('projects')
+    await page.getByTestId('new-file-input').fill('inner')
+    await page.getByTestId('new-file-submit').click()
+    await expect(page.getByTestId('notice')).toContainText('Created folder projects/inner')
+
+    // One stored folder holds both, with nothing but the two hidden placeholders.
+    const files = (await fetchMockState(request))['mockuser/demo-notes']
+    expect(Object.keys(files).some((path) => path.includes('projects'))).toBe(false)
+    const storedOuter = (await storedPathOf(page, 'projects')).split('/')[0]
+    const inside = Object.keys(files).filter((path) => path.startsWith(`${storedOuter}/`))
+    expect(inside).toHaveLength(2)
+    for (const path of inside) {
+      expect(path.endsWith('.age')).toBe(true)
+      expect(files[path]).toContain('-----BEGIN AGE ENCRYPTED FILE-----')
+    }
+    await expect(page.locator('[data-testid="file-node"][data-name="inner"]')).toHaveCount(1)
+    await expect(page.locator('[data-testid="file-node"][data-name=".gitkeep"]')).toHaveCount(0)
+  })
+
   test('rejects the reserved placeholder name', async ({ page }) => {
     await gotoApp(page)
 
