@@ -8,13 +8,12 @@ import {
   expectEditor,
   fillEditor,
   fetchMockState,
-  rootNewFileButton,
+  startNewFile,
+  startNewFileIn,
+  startNewFolder,
   storedPathOf,
   submitPassword,
 } from './helpers'
-
-const rootNewFolderButton = (page: Page) =>
-  page.locator('[data-testid="tree-new-folder-button"][data-path=""]')
 
 const fileNode = (page: Page, path: string) =>
   page.locator(`[data-testid="file-node"][data-path="${path}"]`)
@@ -35,7 +34,7 @@ test.describe('Plain and encrypted files side by side', () => {
     await selectRepo(page, 'mockuser/scratch')
     await expect(fileNode(page, 'notes.md')).toHaveAttribute('data-protected', 'false')
 
-    await rootNewFileButton(page).click()
+    await startNewFile(page)
     await page.getByTestId('new-file-input').fill('secret.md')
     await page.getByTestId('new-file-submit').click()
     await fillEditor(page, '# Secret\n')
@@ -77,7 +76,7 @@ test.describe('Plain and encrypted files side by side', () => {
       'unlocked'
     )
 
-    await rootNewFileButton(page).click()
+    await startNewFile(page)
     await chooseEncryption(page, 'plain')
     await page.getByTestId('new-file-input').fill('public.md')
     await page.getByTestId('new-file-submit').click()
@@ -132,13 +131,12 @@ test.describe('Plain and encrypted files side by side', () => {
     await page.getByTestId('repo-lock-toggle').click()
     await submitPassword(page, 'unlock', 'demo-password')
 
-    await rootNewFolderButton(page).click()
+    await startNewFolder(page)
     await page.getByTestId('new-file-input').fill('projects')
     await page.getByTestId('new-file-submit').click()
     await expect(page.getByTestId('notice')).toContainText('Created folder projects')
 
-    const folder = page.locator('[data-testid="file-node"][data-name="projects"]')
-    await folder.locator('[data-testid="tree-new-file-button"]').click()
+    await startNewFileIn(page, 'projects')
     await chooseEncryption(page, 'plain')
     await page.getByTestId('new-file-input').fill('readme.md')
     await page.getByTestId('new-file-submit').click()
@@ -172,9 +170,7 @@ test.describe('Plain and encrypted files side by side', () => {
     // A plain file added to it must be written where the folder already is,
     // instead of into a second, encrypted-name folder with the same label.
     await clickFileNode(page, 'notes')
-    await page
-      .locator('[data-testid="file-node"][data-name="notes"] [data-testid="tree-new-file-button"]')
-      .click()
+    await startNewFileIn(page, 'notes')
     await chooseEncryption(page, 'plain')
     await page.getByTestId('new-file-input').fill('scratch.md')
     await page.getByTestId('new-file-submit').click()
@@ -202,7 +198,7 @@ test.describe('Plain and encrypted files side by side', () => {
     await gotoApp(page)
     await selectRepo(page, 'mockuser/scratch')
 
-    await rootNewFileButton(page).click()
+    await startNewFile(page)
     await chooseEncryption(page, 'plain')
     await page.getByTestId('new-file-input').fill('notes.md.age')
     await page.getByTestId('new-file-submit').click()

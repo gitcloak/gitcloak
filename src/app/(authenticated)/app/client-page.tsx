@@ -164,7 +164,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   const [renameTarget, setRenameTarget] = useState<FileActionTarget | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<FileActionTarget | null>(null)
   // True while the editor is saving. A delete would race the save's sha, so the
-  // tree's context menu refuses it, exactly like the header's delete button.
+  // tree's context menu refuses it until the save finishes.
   const [isSaving, setIsSaving] = useState(false)
 
   const repoKey = selectedRepo ? `${selectedRepo.owner}/${selectedRepo.name}` : null
@@ -188,7 +188,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
       : true
     : false
 
-  // What the header shows for the open file, and what a rename or delete acts
+  // What the header shows for the open file, and what the header's rename acts
   // on. The stored name is what GitHub has (`.age` when encrypted); the label is
   // the name shown, which is the plain one once the repository is unlocked.
   const openFileTarget: FileActionTarget | null = selectedFile
@@ -210,13 +210,6 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     !selectedFile?.isNew &&
     openFileTarget?.name !== GITCLOAK_FILE &&
     (!selectedFile?.encrypted || selectedFileKey !== null)
-
-  // A delete only needs the stored path and sha, so it works while locked. The
-  // same three exclusions apply.
-  const canDelete =
-    Boolean(openFileTarget) &&
-    !selectedFile?.isNew &&
-    openFileTarget?.name !== GITCLOAK_FILE
 
   const showNotice = useCallback((type: Notice['type'], message: string) => {
     setNotice({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, type, message })
@@ -700,11 +693,6 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     if (openFileTarget) setRenameTarget(openFileTarget)
   }
 
-  /** Ask before removing the file the editor shows. */
-  const handleDeleteFile = () => {
-    if (openFileTarget) setDeleteTarget(openFileTarget)
-  }
-
   /**
    * Rename a file the tree's context menu was opened on. It feeds the same
    * dialog and submit handler as the header, so the safeguards are shared.
@@ -727,8 +715,8 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     const target = deleteTarget
     if (!selectedRepo || !target) return
 
-    // The header hides these two cases instead. The tree's context menu shows
-    // the item disabled, but a stray event must not slip past the shared path.
+    // The context menu shows these two cases disabled, but a stray event must
+    // not slip past the shared path.
     if (target.name === GITCLOAK_FILE) {
       showNotice('error', 'The repository keeps its .gitcloak file.')
       return
@@ -1237,8 +1225,6 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           onSave={handleSaveFile}
           canRename={canRename}
           onRename={handleRenameFile}
-          canDelete={canDelete}
-          onDelete={handleDeleteFile}
           onSavingChange={setIsSaving}
         />
       </SidebarInset>

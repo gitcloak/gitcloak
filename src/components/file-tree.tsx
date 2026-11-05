@@ -13,7 +13,6 @@ import {
   Trash2,
 } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -59,8 +58,6 @@ interface FileTreeProps {
   repo: string
   /** Set while the repository is unlocked. Names are shown decrypted only then. */
   filenameKey?: FilenameKey | null
-  /** Set while the repository is unlocked. A new folder then gets an encrypted name. */
-  isUnlocked?: boolean
   onFileSelect?: (path: string, sha: string) => void
   /**
    * Asks the owner to create an entry in the folder the tree shows.
@@ -113,62 +110,6 @@ function isFolderPlaceholder(node: TreeNode, label: string): boolean {
   return node.name === `${FOLDER_PLACEHOLDER}.age`
 }
 
-interface RowActionsProps {
-  /** Name of the folder (or repository) the buttons add to, for their tooltips. */
-  where: string
-  /** Stored path of the folder, or '' for the repository root. */
-  path: string
-  /** While the repository is unlocked a new folder gets an encrypted name. */
-  isUnlocked: boolean
-  onAddFile: () => void
-  onAddFolder: () => void
-}
-
-/**
- * New file and new folder buttons at the end of a tree row. Shown on hover or
- * focus, and always on touch screens where there is no hover. Both are always
- * enabled: an entry created while the repository is locked (or not set up) is
- * stored plainly, which needs no password — only an encrypted name needs it.
- */
-function RowActions({
-  where,
-  path,
-  isUnlocked,
-  onAddFile,
-  onAddFolder,
-}: RowActionsProps) {
-  return (
-    <span
-      className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
-      // The buttons sit inside a clickable row; they must not also toggle it.
-      onClick={(event) => event.stopPropagation()}
-    >
-      <Button
-        data-testid="tree-new-file-button"
-        data-path={path}
-        variant="ghost"
-        size="icon-xs"
-        title={`New file in ${where}`}
-        aria-label={`New file in ${where}`}
-        onClick={onAddFile}
-      >
-        <FilePlus className="size-3" />
-      </Button>
-      <Button
-        data-testid="tree-new-folder-button"
-        data-path={path}
-        variant="ghost"
-        size="icon-xs"
-        title={isUnlocked ? `New folder in ${where}` : `New plain folder in ${where}`}
-        aria-label={`New folder in ${where}`}
-        onClick={onAddFolder}
-      >
-        <FolderPlus className="size-3" />
-      </Button>
-    </span>
-  )
-}
-
 /**
  * Why Rename is unavailable for a row, or null when it is offered.
  *
@@ -213,8 +154,9 @@ interface EntryMenuProps {
 /**
  * The right-click menu for one tree row: Rename and Delete for the file the
  * row holds, then New file and New folder in the folder the row belongs to.
- * Rename and Delete reuse the flows behind the editor header, including their
- * safeguards, so there is one path for each operation.
+ * Rename reuses the flow behind the editor header, including its safeguards, and
+ * Delete is the only way to remove a file, so there is one path for each
+ * operation.
  */
 function EntryMenu({
   node,
@@ -272,7 +214,6 @@ export function FileTree({
   owner,
   repo,
   filenameKey = null,
-  isUnlocked = false,
   onFileSelect,
   onCreateEntry,
   onRefresh,
@@ -484,13 +425,17 @@ export function FileTree({
                 data-protected={isProtected}
                 data-selected={isSelected}
                 onClick={() => (isDir ? void toggleDirectory(node) : onFileSelect?.(node.path, node.sha))}
-                style={{ paddingLeft: `${level * 12 + 6}px` }}
+                // The 2px left border is on every row so the labels stay aligned;
+                // only its colour changes on the selected row, where it is the
+                // accent bar that marks the file open in the editor.
+                style={{ paddingLeft: `${level * 12 + 4}px` }}
                 className={cn(
-                  'group flex cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 text-[13px] transition-colors',
-                  'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                  'group flex cursor-pointer items-center gap-1.5 rounded-md border-l-2 border-transparent py-1 pr-2 text-[13px] transition-colors',
                   isSelected
-                    ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
-                    : 'text-sidebar-foreground'
+                    ? // A stronger tint than hover, plus the accent bar, so the open
+                      // file reads as selected rather than merely hovered.
+                      'border-gc-accent bg-gc-accent/10 font-medium text-sidebar-foreground hover:bg-gc-accent/20'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                 )}
               >
                 {isDir ? (
@@ -521,15 +466,6 @@ export function FileTree({
                   </span>
                 )}
                 <span className="truncate">{label}</span>
-                {isDir && (
-                  <RowActions
-                    where={label}
-                    path={node.path}
-                    isUnlocked={isUnlocked}
-                    onAddFile={() => void createIn('file', node)}
-                    onAddFolder={() => void createIn('folder', node)}
-                  />
-                )}
               </div>
             </ContextMenuTrigger>
             <ContextMenuContent data-testid="tree-context-menu" data-path={node.path}>
@@ -586,13 +522,6 @@ export function FileTree({
             className="group flex items-center gap-1.5 rounded-md py-1 pl-1.5 pr-2 text-[13px] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <span className="truncate">{repo}</span>
-            <RowActions
-              where={repo}
-              path=""
-              isUnlocked={isUnlocked}
-              onAddFile={() => void createIn('file', null)}
-              onAddFolder={() => void createIn('folder', null)}
-            />
           </div>
         </ContextMenuTrigger>
         {/* The repository row is not a file or a folder, so it only creates. */}

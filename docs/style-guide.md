@@ -370,6 +370,13 @@ and it carries the only motion in the app:
 
 - **Hover:** backgrounds shift one surface step (`surface → canvas`); borders
   may darken to `--gc-border-strong`; links fade to `opacity: 0.7`.
+- **Selected:** the row that is open — the file in the editor — is tinted with
+  `--gc-accent` (`bg-gc-accent/10`) **and** carries a 2px `--gc-accent` bar on
+  its left edge. The bar is what makes it distinguishable at a glance: a tint
+  alone sits too close to the hover fill. Hovering a selected row deepens the
+  tint (`bg-gc-accent/20`) instead of replacing it with the hover fill. The 2px
+  left border is present (transparent) on every tree row so the labels stay
+  aligned; only its colour changes.
 - **Focus:** `focus-visible:ring-1` using `--gc-accent`. Never remove the ring.
   This is implemented once in `ui/input.tsx` (`focus-visible:border-gc-accent
   focus-visible:ring-1 focus-visible:ring-gc-accent/60`) rather than per-field,
@@ -388,7 +395,10 @@ and it carries the only motion in the app:
   what the API can do for that row: `Rename`/`Delete` act on a file, `New file`/
   `New folder` on the folder the row sits in. An operation the server refuses —
   a folder, or `.gitcloak` — stays visible but disabled, with the reason on its
-  `title`, rather than disappearing from the menu.
+  `title`, rather than disappearing from the menu. The menu is the **only** entry
+  point for these four actions: no hover buttons on a row and no delete control
+  in the editor header duplicate them, because a second path is a second set of
+  safeguards to keep in step.
 - **Loading:** keep the control in place and change its label (`Processing…`,
   `Saving…`); animate icons with the shared `spin` / `pulse` keyframes.
 - **Empty:** centered, `--gc-fg-subtle`, short sentence + optional 48px icon.

@@ -7,7 +7,7 @@ import {
   fillEditor,
   submitPassword,
   fetchMockState,
-  rootNewFileButton,
+  startNewFile,
 } from './helpers'
 
 const REPO = 'mockuser/demo-notes'
@@ -79,7 +79,7 @@ test.describe('Encrypted file names', () => {
     await page.getByTestId('repo-lock-toggle').click()
     await submitPassword(page, 'unlock', PASSWORD)
 
-    await rootNewFileButton(page).click()
+    await startNewFile(page)
     await page.getByTestId('new-file-input').fill('archive/plan.md')
     await page.getByTestId('new-file-submit').click()
     await fillEditor(page, '# Plan\n')

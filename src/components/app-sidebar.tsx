@@ -317,7 +317,6 @@ export function AppSidebar({
                 owner={selectedRepo.owner}
                 repo={selectedRepo.name}
                 filenameKey={filenameKey}
-                isUnlocked={isRepoUnlocked}
                 onCreateEntry={onCreateEntry}
                 onFileSelect={(path, sha) => {
                   onFileSelect?.(selectedRepo.owner, selectedRepo.name, path, sha)

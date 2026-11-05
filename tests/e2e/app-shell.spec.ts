@@ -1,4 +1,4 @@
-import { test, expect, gotoApp, selectRepo, rootNewFileButton } from './helpers'
+import { test, expect, gotoApp, selectRepo, openRootMenu } from './helpers'
 
 test.describe('App shell', () => {
   test('renders the sidebar, file tree, empty editor and account controls', async ({
@@ -22,9 +22,12 @@ test.describe('App shell', () => {
     await expect(page.getByTestId('repo-lock-toggle')).toBeEnabled()
     await expect(page.getByTestId('repo-lock-toggle')).toContainText('Unlock repository')
 
-    // File navigator controls.
+    // File navigator controls. Creating entries lives in the row's context menu.
     await expect(page.getByTestId('refresh-files-button')).toBeVisible()
-    await expect(rootNewFileButton(page)).toBeVisible()
+    await openRootMenu(page)
+    await expect(page.getByTestId('tree-menu-new-file')).toBeVisible()
+    await expect(page.getByTestId('tree-menu-new-folder')).toBeVisible()
+    await page.keyboard.press('Escape')
 
     // Root tree nodes from the seed data.
     await expect(
