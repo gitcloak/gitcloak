@@ -83,4 +83,53 @@ test.describe('File tree and editor', () => {
     await expect(page.getByTestId('selected-file-name')).toHaveText('journal.md')
     await expect(page.getByTestId('editor-repo')).toHaveText('mockuser/demo-notes')
   })
+
+  test('marks the open file with a tint and an accent bar that hover does not share', async ({
+    page,
+  }) => {
+    await gotoApp(page)
+
+    const row = page.locator('[data-testid="file-node"][data-path="README.md"]')
+    await expect(row).toBeVisible()
+
+    // Read the styles the browser actually paints, not just the data attribute.
+    const rowStyle = () =>
+      row.evaluate((el) => {
+        const style = getComputedStyle(el)
+        return {
+          background: style.backgroundColor,
+          weight: style.fontWeight,
+          borderLeftWidth: style.borderLeftWidth,
+          borderLeftColor: style.borderLeftColor,
+        }
+      })
+
+    // At rest the row is untinted, lighter than the selected row, and has no
+    // accent bar.
+    const idle = await rowStyle()
+
+    // Hovering tints the row, but that tint must not be the selection tint.
+    await row.hover()
+    await page.waitForTimeout(250)
+    const hovered = await rowStyle()
+    expect(hovered.background).not.toBe(idle.background)
+    expect(hovered.borderLeftColor).toBe(idle.borderLeftColor)
+
+    // Opening the file marks it as selected. Move the pointer off the row so we
+    // read its resting style rather than the hovered variant.
+    await row.click()
+    await expect(row).toHaveAttribute('data-selected', 'true')
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(250)
+    const selected = await rowStyle()
+
+    // The selected row is distinct from both idle and hover.
+    expect(selected.background).not.toBe(idle.background)
+    expect(selected.background).not.toBe(hovered.background)
+    // A weight change and a 2px accent bar are non-colour cues on top of the tint.
+    expect(selected.weight).not.toBe(idle.weight)
+    expect(selected.borderLeftWidth).toBe('2px')
+    expect(selected.borderLeftColor).not.toBe(idle.borderLeftColor)
+    expect(idle.borderLeftColor).toBe('rgba(0, 0, 0, 0)')
+  })
 })

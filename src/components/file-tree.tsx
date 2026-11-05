@@ -327,13 +327,17 @@ export function FileTree({
             data-protected={isProtected}
             data-selected={isSelected}
             onClick={() => (isDir ? void toggleDirectory(node) : onFileSelect?.(node.path, node.sha))}
-            style={{ paddingLeft: `${level * 12 + 6}px` }}
+            // The 2px left border is on every row so the labels stay aligned;
+            // only its colour changes on the selected row, where it is the
+            // accent bar that marks the file open in the editor.
+            style={{ paddingLeft: `${level * 12 + 4}px` }}
             className={cn(
-              'group flex cursor-pointer items-center gap-1.5 rounded-md py-1 pr-2 text-[13px] transition-colors',
-              'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+              'group flex cursor-pointer items-center gap-1.5 rounded-md border-l-2 border-transparent py-1 pr-2 text-[13px] transition-colors',
               isSelected
-                ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
-                : 'text-sidebar-foreground'
+                ? // A stronger tint than hover, plus the accent bar, so the open
+                  // file reads as selected rather than merely hovered.
+                  'border-gc-accent bg-gc-accent/10 font-medium text-sidebar-foreground hover:bg-gc-accent/20'
+                : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
             )}
           >
             {isDir ? (
