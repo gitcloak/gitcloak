@@ -400,7 +400,12 @@ and it carries the only motion in the app:
   in the editor header duplicate them, because a second path is a second set of
   safeguards to keep in step.
 - **Loading:** keep the control in place and change its label (`Processing…`,
-  `Saving…`); animate icons with the shared `spin` / `pulse` keyframes.
+  `Saving…`); animate icons with the shared `spin` / `pulse` keyframes. The same
+  rule applies to a pane: content that is already on screen **stays** on screen
+  while it re-reads, with an inline `role="status"` spinner (`Loader2` +
+  `Updating…`) in the pane's header. A full-pane placeholder (`Loading files…`)
+  is only for the first load, when the pane has nothing to show yet — re-reading
+  a populated pane must never blank it.
 - **Empty:** centered, `--gc-fg-subtle`, short sentence + optional 48px icon.
 
 ---
