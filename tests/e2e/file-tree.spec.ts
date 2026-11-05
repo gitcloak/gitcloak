@@ -5,6 +5,7 @@ import {
   clickFileNode,
   clickFileByName,
   expectEditor,
+  fillEditor,
   submitPassword,
 } from './helpers'
 
@@ -131,5 +132,44 @@ test.describe('File tree and editor', () => {
     expect(selected.borderLeftWidth).toBe('2px')
     expect(selected.borderLeftColor).not.toBe(idle.borderLeftColor)
     expect(idle.borderLeftColor).toBe('rgba(0, 0, 0, 0)')
+  })
+
+  test('marks a newly created file once it is saved and appears in the tree', async ({
+    page,
+  }) => {
+    await gotoApp(page)
+
+    // Start a plain file inside the seeded folder; demo-notes is locked, and a
+    // plain file needs no password.
+    await clickFileNode(page, 'notes')
+    await page
+      .locator(
+        '[data-testid="file-node"][data-name="notes"] [data-testid="tree-new-file-button"]'
+      )
+      .click()
+    await page.getByTestId('new-file-input').fill('scratch.md')
+    await page.getByTestId('new-file-submit').click()
+    await expect(page.getByTestId('selected-file-path')).toHaveText('notes/scratch.md')
+
+    // An unsaved file is not in the repository yet, so the tree has no row to mark.
+    await expect(
+      page.locator('[data-testid="file-node"][data-name="scratch.md"]')
+    ).toHaveCount(0)
+
+    await fillEditor(page, '# Scratch\n\nPlain note.\n')
+    await page.getByTestId('save-button').click()
+    await expect(page.getByTestId('notice')).toContainText('Saved notes/scratch.md')
+
+    // Once saved it appears, and the row the editor has open is the marked one.
+    const row = page.locator('[data-testid="file-node"][data-name="scratch.md"]')
+    await expect(row).toBeVisible()
+    await expect(row).toHaveAttribute('data-selected', 'true')
+    const borderLeftColor = () =>
+      row.evaluate((el) => getComputedStyle(el).borderLeftColor)
+    const siblingBorderLeftColor = () =>
+      page
+        .locator('[data-testid="file-node"][data-name="todo.md"]')
+        .evaluate((el) => getComputedStyle(el).borderLeftColor)
+    expect(await borderLeftColor()).not.toBe(await siblingBorderLeftColor())
   })
 })
