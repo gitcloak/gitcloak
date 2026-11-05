@@ -68,6 +68,20 @@ describe('validateSavePayload', () => {
     expect(result).toMatchObject({ path: 'notes.md', content: '# Notes', encrypted: false })
   })
 
+  it('accepts an empty body for a plain file, which a new file is committed with', () => {
+    const result = validateSavePayload({ path: 'notes.md', content: '', encrypted: false })
+    expect(result).toMatchObject({ path: 'notes.md', content: '', encrypted: false })
+    // An empty body with no encrypted flag is still encrypted by default, and
+    // age armor is never empty — so an undeclared empty save stays refused.
+    expect(() => validateSavePayload({ path: 'notes.md.age', content: '' })).toThrow(
+      /not age-encrypted/
+    )
+    // Missing content is still missing.
+    expect(() => validateSavePayload({ path: 'notes.md', encrypted: false })).toThrow(
+      /Missing required fields/
+    )
+  })
+
   it('defaults to encrypted, so an undeclared plain save is still refused', () => {
     expect(validateSavePayload({ path: 'a.md.age', content: ARMOR }).encrypted).toBe(true)
     expect(() => validateSavePayload({ path: 'notes.md', content: '# Notes' })).toThrow()

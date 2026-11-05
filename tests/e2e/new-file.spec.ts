@@ -7,6 +7,7 @@ import {
   fillEditor,
   expectEditorValue,
   startNewFile,
+  submitPassword,
 } from './helpers'
 
 test.describe('Creating and saving files', () => {
@@ -141,5 +142,104 @@ test.describe('Creating and saving files', () => {
     // Reverting to the original (empty) content disables save again.
     await fillEditor(page, '')
     await expect(page.getByTestId('save-button')).toBeDisabled()
+  })
+
+  test('commits a plain file the moment it is created, without a save', async ({
+    page,
+    request,
+  }) => {
+    await gotoApp(page)
+    // demo-notes is locked, so a plain file needs no password — nothing stands
+    // between creating it and committing it.
+    await expect(page.getByTestId('repo-lock-status')).toContainText('Locked')
+
+    await startNewFile(page)
+    await page.getByTestId('new-file-encryption-plain').click()
+    await expect(page.getByTestId('new-file-encryption-plain')).toBeChecked()
+    await page.getByTestId('new-file-input').fill('early.md')
+    await page.getByTestId('new-file-submit').click()
+
+    // No save happened, yet the file is in the tree...
+    await expect(
+      page.locator('[data-testid="file-node"][data-name="early.md"]')
+    ).toBeVisible()
+    // ...and already committed, as an empty file.
+    const files = (await fetchMockState(request))['mockuser/demo-notes']
+    expect(files['early.md']).toBe('')
+
+    // The editor opened it, with nothing to save.
+    await expect(page.getByTestId('selected-file-path')).toHaveText('early.md')
+    await expectEditorValue(page, '')
+    await expect(page.getByTestId('save-button')).toBeDisabled()
+  })
+
+  test('commits an empty encrypted file the moment it is created, once unlocked', async ({
+    page,
+    request,
+  }) => {
+    await gotoApp(page)
+    await page.getByTestId('repo-lock-toggle').click()
+    await submitPassword(page, 'unlock', 'demo-password')
+    // Unlocking also renames the older plain `.age` files in this repository,
+    // which takes a moment; the dialog stays open until it finishes. Snapshot
+    // the state only afterwards, or those renames show up as new blobs.
+    await expect(page.getByTestId('unlock-dialog')).toHaveCount(0)
+    await expect(page.getByTestId('repo-lock-status')).toHaveAttribute(
+      'data-repo-status',
+      'unlocked'
+    )
+
+    const before = (await fetchMockState(request))['mockuser/demo-notes']
+
+    await startNewFile(page)
+    // Encrypted is what the root of a repository offers by default.
+    await expect(page.getByTestId('new-file-encryption-encrypted')).toBeChecked()
+    await page.getByTestId('new-file-input').fill('vault.md')
+    await page.getByTestId('new-file-submit').click()
+
+    // The password is already in memory, so nothing asks for it again.
+    await expect(page.getByTestId('set-password-title')).toHaveCount(0)
+    await expect(page.getByTestId('save-password-title')).toHaveCount(0)
+
+    await expect(
+      page.locator('[data-testid="file-node"][data-name="vault.md"]')
+    ).toBeVisible()
+
+    const after = (await fetchMockState(request))['mockuser/demo-notes']
+    const added = Object.keys(after).filter((path) => !(path in before))
+    // One new blob, encrypted, under a name that leaks neither the file's name
+    // nor the fact that it is empty.
+    expect(added).toHaveLength(1)
+    expect(added[0].endsWith('.age')).toBe(true)
+    expect(added[0]).not.toContain('vault')
+    expect(after[added[0]]).toContain('-----BEGIN AGE ENCRYPTED FILE-----')
+
+    await expect(page.getByTestId('selected-file-path')).toHaveText('vault.md')
+    await expectEditorValue(page, '')
+    await expect(page.getByTestId('save-button')).toBeDisabled()
+  })
+
+  test('leaves a file created in a locked repository uncommitted until it is saved', async ({
+    page,
+    request,
+  }) => {
+    await gotoApp(page)
+    await expect(page.getByTestId('repo-lock-status')).toContainText('Locked')
+
+    // An encrypted file needs the repository password, which is only asked for
+    // on save — so this file cannot be committed any earlier than it used to be.
+    await startNewFile(page)
+    await page.getByTestId('new-file-input').fill('later.md')
+    await page.getByTestId('new-file-submit').click()
+
+    // It is open and unsaved: no node in the tree, no blob in the repository.
+    await expect(page.getByTestId('editor-title')).toContainText('New')
+    await expect(page.getByTestId('save-button')).toBeDisabled()
+    await expect(
+      page.locator('[data-testid="file-node"][data-name="later.md"]')
+    ).toHaveCount(0)
+
+    const files = (await fetchMockState(request))['mockuser/demo-notes']
+    expect(Object.keys(files).some((path) => path.includes('later'))).toBe(false)
   })
 })
