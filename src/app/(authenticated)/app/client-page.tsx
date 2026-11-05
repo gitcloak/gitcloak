@@ -1,18 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { AlertCircle, KeyRound, Lock, ShieldCheck } from 'lucide-react'
+import { AlertCircle, KeyRound, Lock, ShieldCheck, Trash2 } from 'lucide-react'
 import { AppSidebar, type RepoStatus } from '@/components/app-sidebar'
 import { EditorArea } from '@/components/editor-area'
 import { LoadingOverlay } from '@/components/loading-overlay'
 import { PasswordDialog } from '@/components/password-dialog'
 import { InputDialog } from '@/components/input-dialog'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { NoticeToast, type Notice } from '@/components/notice-toast'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { SidebarInset } from '@/components/ui/sidebar'
 import { useAutosave } from '@/hooks/use-autosave'
 import { useDisplayPath } from '@/hooks/use-display-path'
-import { encryptRepoPath, FOLDER_PLACEHOLDER, validateFilePath, type FilenameKey } from '@/lib/filenames'
+import { encryptEntryName, encryptPlainFilePath, encryptRepoPath, FOLDER_PLACEHOLDER, validateFilePath, type FilenameKey } from '@/lib/filenames'
 import type { NameMigration } from '@/lib/name-migration'
 
 interface Repository {
@@ -25,13 +26,41 @@ interface Repository {
   updatedAt: string
 }
 
+/**
+ * The repository's own metadata file. It is never renamed or deleted: it holds
+ * the name key, and the server refuses to move or remove it.
+ */
+const GITCLOAK_FILE = '.gitcloak'
+
+/** A file the editor can act on, built from the open file and what the header shows. */
+interface FileActionTarget {
+  /** Stored path of the file. */
+  path: string
+  /** Stored name of the file (with `.age` when it is encrypted). */
+  name: string
+  /** Name shown for the file (decrypted while the repository is unlocked). */
+  label: string
+  /** Blob sha of the file, so a stale rename or delete is refused. */
+  sha: string
+}
+
 interface SelectedFile {
   path: string
   content: string
   sha: string // Empty string for new files
   owner: string
   repo: string
+  /** False when the file is stored as plain text instead of age ciphertext. */
+  encrypted: boolean
   isNew?: boolean // Flag to indicate this is a new file not yet saved
+  /**
+   * Exact stored path to write a new plain file to, set when it was created
+   * inside a folder the tree showed. That folder may be stored under an
+   * encrypted name, so the file goes to the stored path it was created with
+   * instead of re-deriving one by encrypting the plain path again. Unset for a
+   * name typed into the create dialog at the repository root.
+   */
+  storedPath?: string
   openId: number // Unique per opened file; keys the editor so it resets on open
 }
 
@@ -124,12 +153,26 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   // Password dialog state (unlock / decrypt / set password / save password)
   const [passwordDialog, setPasswordDialog] = useState<PasswordDialogState>(CLOSED_PASSWORD_DIALOG)
 
-  // Name prompt for a new file or folder. `parent` is the plain path of the
-  // folder it goes in, or '' for the repository root.
-  const [createDialog, setCreateDialog] = useState<{ kind: 'file' | 'folder'; parent: string } | null>(null)
+  // Name prompt for a new file or folder. `parent` is the folder it goes in, or
+  // '' for the repository root. It is the plain path while the repository is
+  // unlocked and the stored path while it is locked, which is what the new
+  // entry's own path is built from. `storedParent` is the folder's stored path
+  // (null at the root), which a plain file is written to as it is.
+  // `encrypted` is the encryption choice for a new file and is ignored for
+  // folders.
+  const [createDialog, setCreateDialog] = useState<{
+    kind: 'file' | 'folder'
+    parent: string
+    parentIsStored: boolean
+    storedParent: string | null
+    encrypted: boolean
+  } | null>(null)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [autosave, setAutosave] = useAutosave()
+  // The file each dialog acts on, or null while that dialog is closed.
+  const [renameTarget, setRenameTarget] = useState<FileActionTarget | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<FileActionTarget | null>(null)
 
   const repoKey = selectedRepo ? `${selectedRepo.owner}/${selectedRepo.name}` : null
   // A repository's name key exists only while its password is in memory.
@@ -145,9 +188,42 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   )
   // Autosave may only save when the file's repository password is already in
   // memory, so it never opens a password dialog while the user is typing.
+  // Plain files need no password, so they are always autosavable.
   const canAutosave = selectedFile
-    ? Boolean(repoPasswords[`${selectedFile.owner}/${selectedFile.repo}`])
+    ? selectedFile.encrypted
+      ? Boolean(repoPasswords[`${selectedFile.owner}/${selectedFile.repo}`])
+      : true
     : false
+
+  // What the header shows for the open file, and what a rename or delete acts
+  // on. The stored name is what GitHub has (`.age` when encrypted); the label is
+  // the name shown, which is the plain one once the repository is unlocked.
+  const openFileTarget: FileActionTarget | null = selectedFile
+    ? {
+        path: selectedFile.path,
+        name: selectedFile.path.split('/').pop() ?? selectedFile.path,
+        label: (selectedDisplayPath ?? selectedFile.path).split('/').pop() ?? selectedFile.path,
+        sha: selectedFile.sha,
+      }
+    : null
+
+  // A rename needs the file's plain name, so an encrypted file whose name key is
+  // not in memory (locked, or a repository from before encrypted names) cannot
+  // be renamed — the new stored name is derived from the plain one. A file that
+  // has not been saved yet has no stored blob to move, and `.gitcloak` is the
+  // repository's own metadata, which the server refuses to move.
+  const canRename =
+    Boolean(openFileTarget) &&
+    !selectedFile?.isNew &&
+    openFileTarget?.name !== GITCLOAK_FILE &&
+    (!selectedFile?.encrypted || selectedFileKey !== null)
+
+  // A delete only needs the stored path and sha, so it works while locked. The
+  // same three exclusions apply.
+  const canDelete =
+    Boolean(openFileTarget) &&
+    !selectedFile?.isNew &&
+    openFileTarget?.name !== GITCLOAK_FILE
 
   const showNotice = useCallback((type: Notice['type'], message: string) => {
     setNotice({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, type, message })
@@ -271,6 +347,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           sha: file.sha,
           owner: file.owner,
           repo: file.repo,
+          encrypted: true,
           openId: nextOpenId(),
         })
         showNotice('success', `Unlocked "${file.path}" with an alternative password.`)
@@ -419,7 +496,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         content = decrypted
       }
 
-      setSelectedFile({ path, content, sha: data.sha, owner, repo, openId: nextOpenId() })
+      setSelectedFile({ path, content, sha: data.sha, owner, repo, encrypted: isEncrypted, openId: nextOpenId() })
     } catch (error) {
       console.error('Error loading file:', error)
       showNotice(
@@ -466,40 +543,81 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     showNotice('info', `${key} is now locked. Password removed from memory.`)
   }
 
-  const handleCreateEntry = (kind: 'file' | 'folder', parent: string) => {
+  const handleCreateEntry = (
+    kind: 'file' | 'folder',
+    parent: string,
+    storedParent: string | null
+  ) => {
     if (!selectedRepo) {
       showNotice('error', 'Select a repository first.')
       return
     }
 
-    setCreateDialog({ kind, parent })
+    // A nested file can only be encrypted once the repository is unlocked: the
+    // folder's plaintext path is needed to build its encrypted name. While the
+    // repository is locked or uninitialized the tree can only hand over the
+    // folder's stored path, so a nested file must be plain there. At the root
+    // both are possible — an encrypted file there starts (and asks for) the
+    // repository password on save.
+    //
+    // A folder is encrypted — its own name and its placeholder — only while the
+    // repository is unlocked; locked or not set up it is created plainly, which
+    // needs no password, just like a plain file.
+    const unlocked = Boolean(
+      repoPasswords[`${selectedRepo.owner}/${selectedRepo.name}`]
+    )
+    const nested = storedParent !== null
+    const encrypted = kind === 'file' ? !nested || unlocked : unlocked
+
+    setCreateDialog({
+      kind,
+      parent,
+      parentIsStored: nested && !unlocked,
+      storedParent,
+      encrypted,
+    })
   }
 
   /**
-   * Create an empty folder. Git cannot store one, so the folder gets an
-   * encrypted placeholder file, which the tree hides. The placeholder needs the
-   * repository password, so the repository must be unlocked.
+   * Create an empty folder. Git cannot store one, so the folder gets a
+   * placeholder file, which the tree hides. An encrypted folder derives its
+   * stored name — and the placeholder's — from the repository password; a plain
+   * folder is written where it was clicked, under its own name, and needs none.
+   * `plainPlaceholderPath` is that written path, placeholder included.
    */
-  const handleCreateFolder = async (folderPath: string) => {
+  const handleCreateFolder = async (
+    folderPath: string,
+    plainPlaceholderPath: string,
+    encrypted: boolean
+  ) => {
     if (!selectedRepo) return
 
     const key = `${selectedRepo.owner}/${selectedRepo.name}`
     const password = repoPasswords[key]
-    if (!password) {
-      showNotice('error', 'Unlock the repository to create a folder.')
+    if (encrypted && !password) {
+      showNotice('error', 'Unlock the repository to create an encrypted folder.')
       return
     }
 
     setLoadingMessage('Creating folder...')
     setIsLoading(true)
     try {
-      const { encryptWithPassword } = await import('@/lib/encryption')
-      const placeholderPath = `${folderPath}/${FOLDER_PLACEHOLDER}`
-      const nameKey = filenameKeys[key] ?? null
-      const savePath = nameKey
-        ? await encryptRepoPath(placeholderPath, nameKey)
-        : `${placeholderPath}.age`
-      const content = await encryptWithPassword('', password)
+      let savePath: string
+      let body: string
+      if (encrypted) {
+        const { encryptWithPassword } = await import('@/lib/encryption')
+        const placeholderPath = `${folderPath}/${FOLDER_PLACEHOLDER}`
+        const nameKey = filenameKeys[key] ?? null
+        savePath = nameKey
+          ? await encryptRepoPath(placeholderPath, nameKey)
+          : `${placeholderPath}.age`
+        body = await encryptWithPassword('', password as string)
+      } else {
+        // A plain placeholder is a real file, and the server refuses an empty
+        // body, so it carries a newline. It keeps the folder with no password.
+        savePath = plainPlaceholderPath
+        body = '\n'
+      }
 
       const response = await fetch(
         `/api/repos/${selectedRepo.owner}/${selectedRepo.name}/save`,
@@ -510,7 +628,8 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           },
           body: JSON.stringify({
             path: savePath,
-            content,
+            content: body,
+            encrypted,
             message: `Create ${savePath}`,
           }),
         }
@@ -538,9 +657,15 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     if (!selectedRepo || !createDialog) return
 
     const path = createDialog.parent ? `${createDialog.parent}/${name}` : name
-    let problem = validateFilePath(path)
+    // A locked repository's folder path is already stored, and stored segments
+    // are longer than the plaintext limit, so only the typed part is checked.
+    let problem = validateFilePath(createDialog.parentIsStored ? name : path)
     if (!problem && path.split('/').pop() === FOLDER_PLACEHOLDER) {
       problem = `${FOLDER_PLACEHOLDER} is reserved for empty folders.`
+    }
+    // `.age` is what marks a file as encrypted, so a plain file cannot use it.
+    if (!problem && createDialog.kind === 'file' && !createDialog.encrypted && path.endsWith('.age')) {
+      problem = 'A plain file name cannot end in .age.'
     }
     if (problem) {
       showNotice('error', problem)
@@ -548,7 +673,14 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     }
 
     if (createDialog.kind === 'folder') {
-      void handleCreateFolder(path)
+      // A plain folder is written where the tree showed it — the folder the user
+      // clicked — while an encrypted name is derived from `path`, the plaintext
+      // path. `path` is the folder itself; the placeholder sits inside it.
+      const plainPlaceholderPath =
+        createDialog.storedParent === null
+          ? `${path}/${FOLDER_PLACEHOLDER}`
+          : `${createDialog.storedParent}/${name}/${FOLDER_PLACEHOLDER}`
+      void handleCreateFolder(path, plainPlaceholderPath, createDialog.encrypted)
       return
     }
 
@@ -559,31 +691,173 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
       sha: '', // Empty sha for new files
       owner: selectedRepo.owner,
       repo: selectedRepo.name,
+      encrypted: createDialog.encrypted,
       isNew: true,
+      // A plain file created inside a folder is written to that folder's stored
+      // path, so it lands where the user clicked it and its folder segments are
+      // never encrypted a second time.
+      storedPath:
+        createDialog.storedParent === null ? undefined : `${createDialog.storedParent}/${name}`,
       openId: nextOpenId(),
     })
+  }
+
+  /** Open the rename dialog for the file the editor shows. */
+  const handleRenameFile = () => {
+    if (openFileTarget) setRenameTarget(openFileTarget)
+  }
+
+  /** Ask before removing the file the editor shows. */
+  const handleDeleteFile = () => {
+    if (openFileTarget) setDeleteTarget(openFileTarget)
+  }
+
+  /**
+   * Delete a file from the repository. The stored bytes go away; the file stays
+   * in the repository's Git history. A plain file and an encrypted one are both
+   * addressed by their stored path, so this needs no password.
+   */
+  const handleDeleteSubmit = () => {
+    const target = deleteTarget
+    if (!selectedRepo || !target) return
+
+    void (async () => {
+      const owner = selectedRepo.owner
+      const repoName = selectedRepo.name
+
+      setLoadingMessage('Deleting file...')
+      setIsLoading(true)
+      try {
+        const response = await fetch(`/api/repos/${owner}/${repoName}/delete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: target.path,
+            sha: target.sha,
+            message: `Delete ${target.path}`,
+          }),
+        })
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}))
+          throw new Error(error.error || 'Failed to delete file')
+        }
+
+        // Close the editor when it still shows the file that was just removed.
+        setSelectedFile(current =>
+          current && current.owner === owner && current.repo === repoName && current.path === target.path
+            ? null
+            : current
+        )
+        showNotice('success', `Deleted ${target.label}`)
+        window.__fileTreeRefresh?.()
+      } catch (error) {
+        console.error('Error deleting file:', error)
+        showNotice(
+          'error',
+          `Failed to delete file: ${error instanceof Error ? error.message : 'Unknown error'}`
+        )
+      } finally {
+        setIsLoading(false)
+      }
+    })()
+  }
+
+  /**
+   * Rename a file in place. The move copies the stored bytes unchanged, so
+   * nothing is decrypted or re-encrypted: an encrypted file only gets a new
+   * stored name, encrypted from the new plain name, and a plain file keeps the
+   * new name as typed. Either way the file stays in the folder it was in.
+   */
+  const handleRenameSubmit = (newName: string) => {
+    const target = renameTarget
+    if (!selectedRepo || !target) return
+
+    const encrypted = target.name.endsWith('.age')
+    let problem = validateFilePath(newName)
+    if (!problem && newName.includes('/')) {
+      problem = 'Enter a name without "/". Renaming only changes the file name.'
+    }
+    if (!problem && newName === FOLDER_PLACEHOLDER) {
+      problem = `${FOLDER_PLACEHOLDER} is reserved for empty folders.`
+    }
+    if (!problem && !encrypted && newName.endsWith('.age')) {
+      problem = 'A plain file name cannot end in .age.'
+    }
+    if (!problem && newName === target.label) {
+      problem = 'The new name must differ from the old one.'
+    }
+    if (problem) {
+      showNotice('error', problem)
+      return
+    }
+
+    void (async () => {
+      const owner = selectedRepo.owner
+      const repoName = selectedRepo.name
+      const folder = target.path.split('/').slice(0, -1).join('/')
+      const nameKey = filenameKeys[`${owner}/${repoName}`] ?? null
+
+      let to: string
+      if (encrypted) {
+        if (!nameKey) {
+          showNotice('error', 'Unlock the repository to rename an encrypted file.')
+          return
+        }
+        const stored = `${await encryptEntryName(newName, nameKey)}.age`
+        to = folder ? `${folder}/${stored}` : stored
+      } else {
+        to = folder ? `${folder}/${newName}` : newName
+      }
+
+      setLoadingMessage('Renaming file...')
+      setIsLoading(true)
+      try {
+        const response = await fetch(`/api/repos/${owner}/${repoName}/move`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: target.path,
+            to,
+            fromSha: target.sha,
+            message: `Rename ${target.path}`,
+          }),
+        })
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}))
+          throw new Error(error.error || 'Failed to rename file')
+        }
+        const result = await response.json()
+
+        // Keep following the renamed file when it is the one open in the editor.
+        setSelectedFile(current =>
+          current && current.owner === owner && current.repo === repoName && current.path === target.path
+            ? { ...current, path: result.path, sha: result.sha, storedPath: undefined }
+            : current
+        )
+        showNotice('success', `Renamed ${target.label} to ${newName}`)
+        // Re-read the tree, with the renamed file revealed under its new name.
+        window.__fileTreeRefresh?.(result.path)
+      } catch (error) {
+        console.error('Error renaming file:', error)
+        showNotice(
+          'error',
+          `Failed to rename file: ${error instanceof Error ? error.message : 'Unknown error'}`
+        )
+      } finally {
+        setIsLoading(false)
+      }
+    })()
   }
 
   const handleSaveFile = async (content: string) => {
     if (!selectedFile) return
 
-    const performSave = async (password: string, nameKey: FilenameKey | null) => {
-      const { encryptWithPassword } = await import('@/lib/encryption')
-
-      // Encrypt the content
-      const encryptedContent = await encryptWithPassword(content, password)
-
-      // A new file's name is encrypted when the repository has a name key (see
-      // `openFilenameKey`). An opened file keeps the stored path it was loaded from.
-      const savePath = selectedFile.isNew
-        ? nameKey
-          ? await encryptRepoPath(selectedFile.path, nameKey)
-          : `${selectedFile.path}.age`
-        : selectedFile.path.endsWith('.age')
-          ? selectedFile.path
-          : `${selectedFile.path}.age`
-
-      // Save to GitHub
+    /**
+     * Write one file to the repository and adopt the result in the editor.
+     * `body` is either age ciphertext or plain text, and `encrypted` says which
+     * so the server can check it.
+     */
+    const saveToGitHub = async (savePath: string, body: string, encrypted: boolean) => {
       const response = await fetch(
         `/api/repos/${selectedFile.owner}/${selectedFile.repo}/save`,
         {
@@ -593,17 +867,16 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           },
           body: JSON.stringify({
             path: savePath,
-            content: encryptedContent,
+            content: body,
+            encrypted,
             sha: selectedFile.isNew ? undefined : selectedFile.sha,
-            message: selectedFile.isNew
-              ? `Create ${savePath}`
-              : `Update ${savePath}`,
+            message: selectedFile.isNew ? `Create ${savePath}` : `Update ${savePath}`,
           }),
         }
       )
 
       if (!response.ok) {
-        const error = await response.json()
+        const error = await response.json().catch(() => ({}))
         throw new Error(error.error || 'Failed to save file')
       }
 
@@ -627,13 +900,67 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
 
       const shownPath = selectedFile.isNew ? selectedFile.path : (selectedDisplayPath ?? savePath)
       showNotice('success', `Saved ${shownPath}`)
-      // Refresh the file tree so newly created files show up immediately.
-      window.__fileTreeRefresh?.()
+      // Refresh the file tree so newly created files show up immediately. A new
+      // file is revealed: its folders are opened, so a file created at a nested
+      // path is visible even when every folder above it was collapsed.
+      window.__fileTreeRefresh?.(selectedFile.isNew ? savePath : undefined)
     }
 
     try {
-      const { checkGitCloakExists, createGitCloakFile, openFilenameKey, verifyPassword } = await import('@/lib/gitcloak')
       const repoKeyForFile = `${selectedFile.owner}/${selectedFile.repo}`
+
+      // A plain file carries no ciphertext, so it needs no password. It is
+      // written to the stored path it was created with, which keeps a file
+      // added inside a folder in that folder whether the folder is stored under
+      // a plain or an encrypted name. A name typed into the create dialog at the
+      // repository root has no stored path yet, so its folder segments are
+      // encrypted when the repository has a name key, which keeps it in the same
+      // stored tree as the encrypted files next to it.
+      if (!selectedFile.encrypted) {
+        const nameKey = filenameKeys[repoKeyForFile] ?? null
+        const savePath =
+          selectedFile.storedPath ??
+          (selectedFile.isNew && nameKey
+            ? await encryptPlainFilePath(selectedFile.path, nameKey)
+            : selectedFile.path)
+        await saveToGitHub(savePath, content, false)
+        return
+      }
+
+      const performSave = async (password: string, nameKey: FilenameKey | null) => {
+        const { encryptWithPassword } = await import('@/lib/encryption')
+
+        // Encrypt the content
+        const encryptedContent = await encryptWithPassword(content, password)
+
+        // A new file's name is encrypted when the repository has a name key
+        // (see `openFilenameKey`). An opened file keeps the stored path it was
+        // loaded from, which is a `.age` path for every encrypted file.
+        //
+        // Inside a folder the tree showed, only the file's own name is
+        // encrypted. That folder keeps the stored name it already has — a plain
+        // one, for a folder created while the repository was locked or one that
+        // predates encrypted names — the way `name-migration.ts` renames a file
+        // in place and leaves its folder alone. Encrypting the folder segment
+        // again would write the file into a second, encrypted-name folder with
+        // the same label, leaving the folder the user clicked empty. A name
+        // typed at the repository root has no stored folder to keep, so its
+        // folder segments are encrypted instead.
+        const storedFolder =
+          selectedFile.storedPath?.split('/').slice(0, -1).join('/') ?? null
+        const name = selectedFile.path.split('/').pop() ?? selectedFile.path
+        const savePath = selectedFile.isNew
+          ? nameKey
+            ? storedFolder !== null
+              ? `${storedFolder}/${await encryptEntryName(name, nameKey)}.age`
+              : await encryptRepoPath(selectedFile.path, nameKey)
+            : `${selectedFile.storedPath ?? selectedFile.path}.age`
+          : selectedFile.path
+
+        await saveToGitHub(savePath, encryptedContent, true)
+      }
+
+      const { checkGitCloakExists, createGitCloakFile, openFilenameKey, verifyPassword } = await import('@/lib/gitcloak')
       const gitcloakCheck = await checkGitCloakExists(selectedFile.owner, selectedFile.repo)
 
       if (!gitcloakCheck.exists) {
@@ -737,13 +1064,35 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
 
   const createKind = createDialog?.kind ?? 'file'
   const createParent = createDialog?.parent ?? ''
+  // Whether the parent came from the tree of a locked repository, in which case
+  // its plaintext name is unknown here and it can only hold a plain file.
+  const createParentIsStored = createDialog?.parentIsStored ?? false
+  // A nested file can only be encrypted while its folder's plaintext path is
+  // known; at the root both choices are available. Mirrors the default chosen in
+  // `handleCreateEntry`.
+  const canEncryptFile = createParent === '' || !createParentIsStored
+  // A folder is created plainly while the repository is locked (or not set up),
+  // because an encrypted name needs the name key. Mirrors `handleCreateEntry`.
+  const createFolderIsPlain = createKind === 'folder' && createDialog?.encrypted === false
   const createDescription =
     createKind === 'folder'
-      ? createParent
-        ? `The folder is created in ${createParent}.`
-        : 'Enter the folder name (e.g., folder/subfolder).'
+      ? `${
+          createParent
+            ? `The folder is created in ${createParent}.`
+            : 'Enter the folder name (e.g., folder/subfolder).'
+        }${
+          createFolderIsPlain
+            ? ' It is stored as a plain folder under its own name, so it needs no password.'
+            : ''
+        }`
       : createParent
-        ? `The file is created in ${createParent}.`
+        ? `The file is created in ${
+            createParentIsStored ? 'the folder you selected' : createParent
+          }.${
+            canEncryptFile
+              ? ''
+              : ' Only a plain file can be added here, because an encrypted name needs the repository password.'
+          }`
         : 'Enter the file name (e.g., folder/file.md).'
 
   return (
@@ -770,7 +1119,67 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         description={createDescription}
         label={createKind === 'folder' ? 'Folder name' : 'File name'}
         placeholder={createKind === 'folder' ? 'folder' : createParent ? 'file.md' : 'folder/file.md'}
+        choice={
+          createKind === 'file'
+            ? {
+                label: 'Encryption',
+                value: createDialog?.encrypted === false ? 'plain' : 'encrypted',
+                options: [
+                  {
+                    value: 'encrypted',
+                    label: 'Encrypted',
+                    hint: canEncryptFile
+                      ? 'age ciphertext under an encrypted file name.'
+                      : 'An encrypted file here needs the repository password.',
+                    disabled: !canEncryptFile,
+                  },
+                  {
+                    value: 'plain',
+                    label: 'Plain',
+                    hint: 'Stored as-is, so it stays readable on GitHub.',
+                  },
+                ],
+                onChange: (value) =>
+                  setCreateDialog((current) =>
+                    current ? { ...current, encrypted: value === 'encrypted' } : current
+                  ),
+                testId: 'new-file-encryption',
+              }
+            : undefined
+        }
         onSubmit={handleCreateSubmit}
+      />
+      <InputDialog
+        open={renameTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRenameTarget(null)
+        }}
+        title="Rename File"
+        description={
+          renameTarget
+            ? `Rename "${renameTarget.label}". The file keeps its content and stays in its folder.`
+            : ''
+        }
+        label="New name"
+        defaultValue={renameTarget?.label ?? ''}
+        submitLabel="Rename"
+        onSubmit={handleRenameSubmit}
+      />
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null)
+        }}
+        title="Delete File"
+        description={
+          deleteTarget
+            ? `Delete "${deleteTarget.label}"? It is removed from the repository. Its contents stay in the repository's Git history.`
+            : ''
+        }
+        confirmLabel="Delete"
+        icon={<Trash2 className="size-4" />}
+        testId="delete-file"
+        onConfirm={handleDeleteSubmit}
       />
       <AppSidebar
         repositories={repositories}
@@ -802,6 +1211,10 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           autosave={autosave}
           canAutosave={canAutosave}
           onSave={handleSaveFile}
+          canRename={canRename}
+          onRename={handleRenameFile}
+          canDelete={canDelete}
+          onDelete={handleDeleteFile}
         />
       </SidebarInset>
     </>

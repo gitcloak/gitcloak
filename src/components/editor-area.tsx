@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Clock, Code2, Eye, PenLine, Save, Zap } from 'lucide-react'
+import { Clock, Code2, Eye, Pencil, PenLine, Save, Trash2, Zap } from 'lucide-react'
 
 import { MarkdownEditor } from '@/components/markdown-editor'
 import { Button } from '@/components/ui/button'
@@ -39,6 +39,17 @@ interface EditorAreaProps {
    */
   canAutosave: boolean
   onSave: (content: string) => Promise<void>
+  /**
+   * Whether the open file can be renamed. False with nothing open, for a file
+   * that has not been saved yet, for `.gitcloak`, and for an encrypted file
+   * whose plain name is not known (the repository is locked or predates
+   * encrypted names) — a new stored name is derived from the plain one.
+   */
+  canRename: boolean
+  onRename: () => void
+  /** Whether the open file can be deleted. */
+  canDelete: boolean
+  onDelete: () => void
 }
 
 export function EditorArea({
@@ -48,6 +59,10 @@ export function EditorArea({
   autosave,
   canAutosave,
   onSave,
+  canRename,
+  onRename,
+  canDelete,
+  onDelete,
 }: EditorAreaProps) {
   // The parent keys this component by `openId`, so each opened file starts
   // with fresh state. Saving does not remount the editor, which keeps text the
@@ -67,6 +82,10 @@ export function EditorArea({
 
   const hasChanges = content !== savedContent
   const hasFile = Boolean(selectedFile)
+  // What the header shows for the open file: the full path sits beside the
+  // repository name, while the title is only the file's own name.
+  const shownPath = selectedFile ? displayPath ?? selectedFile.path : null
+  const shownName = shownPath ? shownPath.split('/').pop() ?? shownPath : null
   // Markdown can be shown rendered or as source; the choice resets with each
   // opened file because this component is keyed by `openId`. Other files are
   // always shown as source, since rendering would misread e.g. `# comments`.
@@ -134,6 +153,9 @@ export function EditorArea({
   }, [isSaving, queued, savedContent, onSave])
 
   const canSave = Boolean(selectedFile) && hasChanges && !isSaving
+  // A save already in flight would recreate the file after the delete, so the
+  // delete waits for it to finish.
+  const canDeleteNow = canDelete && !isSaving
   // Autosave is on but idle: a file is open and its repository is locked, so a
   // save would need the password. No file open is not "paused" — nothing to
   // save yet.
@@ -151,13 +173,20 @@ export function EditorArea({
         />
 
         <div className="min-w-0 flex-1">
-          <div
-            data-testid="editor-repo"
-            className="truncate text-xs text-gc-fg-muted"
-          >
-            {selectedFile
-              ? `${selectedFile.owner}/${selectedFile.repo}`
-              : 'No file selected'}
+          <div className="flex min-w-0 items-center gap-1.5 text-xs text-gc-fg-muted">
+            <span data-testid="editor-repo" className="shrink-0">
+              {selectedFile
+                ? `${selectedFile.owner}/${selectedFile.repo}`
+                : 'No file selected'}
+            </span>
+            {shownPath && (
+              <>
+                <span className="shrink-0">/</span>
+                <span data-testid="selected-file-path" className="truncate">
+                  {shownPath}
+                </span>
+              </>
+            )}
           </div>
           <div
             data-testid="editor-title"
@@ -165,9 +194,22 @@ export function EditorArea({
           >
             {selectedFile ? (
               <>
-                <span data-testid="selected-file-path" className="truncate">
-                  {displayPath ?? selectedFile.path}
+                <span data-testid="selected-file-name" className="truncate">
+                  {shownName}
                 </span>
+                {canRename && (
+                  <Button
+                    data-testid="header-rename-button"
+                    onClick={onRename}
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Rename ${shownName}`}
+                    title={`Rename ${shownName}`}
+                    className="shrink-0 text-gc-fg-muted hover:text-gc-fg"
+                  >
+                    <Pencil className="size-4" />
+                  </Button>
+                )}
                 {selectedFile.isNew && (
                   <span className="shrink-0 rounded-gc-sm bg-gc-success-bg px-2 py-0.5 text-xs font-medium text-gc-success-fg">
                     New
@@ -261,6 +303,19 @@ export function EditorArea({
           </span>
           <span className="sm:hidden">Save</span>
         </Button>
+
+        <Button
+          data-testid="delete-file-button"
+          onClick={onDelete}
+          disabled={!canDeleteNow}
+          variant="outline"
+          size="icon-sm"
+          aria-label="Delete file"
+          title="Delete file"
+          className="shrink-0 border-gc-border bg-gc-surface text-gc-danger shadow-none hover:bg-gc-danger-bg hover:text-gc-danger"
+        >
+          <Trash2 className="size-4" />
+        </Button>
       </header>
 
       {/* Editor pane. */}
@@ -289,7 +344,8 @@ export function EditorArea({
                 Select a file to start editing
               </p>
               <p className="text-xs">
-                Your files will be encrypted with age format before saving
+                Files are encrypted with age before saving, or stored as plain
+                text when you create them that way
               </p>
             </div>
           </div>

@@ -11,6 +11,7 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 ## Features
 
 - **Client-Side Encryption**: All encryption/decryption happens in your browser using age format
+- **Optional Encryption Per File**: choose Encrypted (the default) or Plain for each file you create. Plain files are stored under their own name exactly as written, so they stay readable on GitHub without the password; encrypted and plain files can live in the same repository. A file can be added anywhere, inside a folder too, without unlocking first: while the repository is locked (or not yet set up) only Plain is on offer, and the new file keeps the folder where the tree already put it instead of getting a second copy. A new folder can be created without unlocking too: locked (or not set up), it is stored as a plain folder under its own name, so it needs no password
 - **Zero Knowledge**: Your encryption password is stored only in browser memory, never transmitted
 - **GitHub Native**: Encrypted files are stored directly in your GitHub repositories
 - **Repository-Level Passwords**: Each repository has its own encryption password
@@ -18,7 +19,8 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 - **Interoperable**: Uses age format - decrypt your files anywhere with age-compatible tools
 - **Real-time Editing**: Edit files with live status updates and background saving
 - **Live Markdown**: Headings, emphasis, links, lists, quotes and code render as you type, Obsidian-style; the stored file is always the plain Markdown you wrote. A Source/Rendered toggle switches to the raw text; non-Markdown files always show raw text
-- **File Tree Navigation**: Browse and manage your repository files easily
+- **File Tree Navigation**: Browse and manage your repository files easily. A newly created file appears in the tree right away, opening the folders above it even when they were collapsed
+- **Rename & Delete Files**: Rename any file from the pen next to its name in the editor header, or remove it with the trash button beside Save. The file keeps its content and stays in its folder; renaming an encrypted file re-encrypts its stored name, so the new name stays hidden on GitHub, and deleting one addresses only its stored name and current revision
 - **Responsive Shell**: Collapsible sidebar that becomes an off-canvas sheet on mobile
 - **Dark Mode**: Light/dark/system themes via `next-themes`, chosen in Settings
 - **Autosave**: Optionally save a moment after you stop typing (Settings → Editor)
@@ -28,11 +30,12 @@ GitCloak is a web application that allows you to edit and store encrypted files 
 
 1. **Authenticate** with your GitHub account via OAuth
 2. **Select** a repository you want to work with
-3. **Create or edit** files - they're automatically encrypted with age format before saving, under encrypted names too
+3. **Create or edit** files - choose Encrypted (the default) or Plain for each new file. Encrypted files are age-encrypted, under encrypted names too. You can add a file inside any folder without unlocking; if the repository is locked (or not set up yet), the only choice is Plain. A new folder works the same way: without the password it is created as a plain folder
 4. **Set a password** the first time you save an encrypted file in a repository
-5. **Files are saved** to GitHub with a `.age` extension, fully encrypted, under encrypted names
+5. **Rename** a file with the pen next to its name in the editor header, or **delete** it with the trash button beside Save. A rename keeps the file's content and its folder, and an encrypted file gets a fresh encrypted name; a delete removes the file from the repository — its contents stay in the repository's Git history
+6. **Files are saved** to GitHub: encrypted files with a `.age` extension, fully encrypted, under encrypted names; plain files exactly as you wrote them. The editor header shows the repository and the open file's full path on one line, with just the file's own name as the title
 
-Your files remain in your GitHub repository, but they're encrypted at rest. Only someone with the repository password can decrypt them, and only the repository password reveals their names.
+Your files remain in your GitHub repository, but the encrypted ones are encrypted at rest. Only someone with the repository password can decrypt them, and only the repository password reveals their names. Plain files are readable by anyone who can read the repository.
 
 ## Security Model
 
@@ -40,10 +43,10 @@ Your files remain in your GitHub repository, but they're encrypted at rest. Only
 - **Password Verification**: Uses encrypted challenge string (never stores password)
 - **Client-Side Only**: All crypto operations happen in your browser
 - **Memory-Only Storage**: Passwords stored only in browser memory during session
-- **Encrypted File Names**: File names are encrypted with a key that is itself protected by the repository password. Locked, GitHub and the file tree only show the encrypted names. Unlocking a repository renames its older `.age` files to encrypted names too
+- **Encrypted File Names**: File names are encrypted with a key that is itself protected by the repository password. Locked, GitHub and the file tree only show the encrypted names. Unlocking a repository renames its older `.age` files to encrypted names too, and renaming an encrypted file re-encrypts its stored name
 - **GitHub OAuth**: No password storage, uses GitHub's authentication
 
-Not hidden: folder names and plain (non-`.age`) files, the number of files and folders, folder depth, file sizes, commit times, and commit messages (which contain the stored names).
+Not hidden: folder names, the names and full contents of files you created as plain, the number of files and folders, folder depth, file sizes, commit times, and commit messages (which contain the stored names).
 
 **⚠️ Important**: Keep your repository passwords safe. If you lose a password, encrypted files in that repository cannot be recovered.
 
@@ -283,7 +286,8 @@ npm run test:e2e
 The suite boots `next dev` on port 3100 with `FILE_BACKEND=mock` (see
 `playwright.config.ts`), resets the backend before every test and verifies the
 landing page, repository selector, lock/unlock flow, file tree, editor,
-decryption with an alternative password, creating/saving encrypted files, a
+decryption with an alternative password, creating/saving encrypted files,
+plain files stored next to encrypted ones, a
 full encrypt-on-save → reload → decrypt round trip (asserting the plaintext is
 never stored), and that the [style guide](docs/style-guide.md) is applied to
 the unlock popup.

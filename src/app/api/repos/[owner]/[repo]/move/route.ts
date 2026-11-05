@@ -44,7 +44,7 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
     }
 
-    const { from, to, fromSha } = validateMovePayload(body)
+    const { from, to, fromSha, message } = validateMovePayload(body)
 
     const backend = await createFileBackend(session.accessToken)
     const result = await backend.moveFile({
@@ -53,7 +53,7 @@ export async function POST(
       from,
       to,
       fromSha,
-      message: 'Encrypt file name',
+      message: message || 'Encrypt file name',
     })
 
     return NextResponse.json({

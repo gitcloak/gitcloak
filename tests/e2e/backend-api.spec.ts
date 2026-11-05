@@ -107,21 +107,116 @@ test.describe('Backend API contract', () => {
     expect(state[repo]['ideas.md.age']).toBeDefined()
   })
 
-  test('move refuses plain files, .gitcloak and the same path', async ({ request }) => {
-    const plain = await request.post('/api/repos/mockuser/demo-notes/move', {
-      data: { from: 'README.md', to: 'x.age', fromSha: 'a'.repeat(40) },
-    })
-    expect(plain.status()).toBe(400)
+  test('move renames a plain file in place, keeping its bytes', async ({ request }) => {
+    const repo = 'mockuser/demo-notes'
+    const before = await fetchMockState(request)
+    const original = before[repo]['notes/todo.md']
+    const listing = await request.get(`/api/repos/${repo}/contents?path=notes`)
+    const sha = (await listing.json()).find(
+      (entry: { path: string }) => entry.path === 'notes/todo.md'
+    ).sha
 
-    const gitcloak = await request.post('/api/repos/mockuser/demo-notes/move', {
-      data: { from: '.gitcloak', to: 'x.age', fromSha: 'a'.repeat(40) },
+    const move = await request.post(`/api/repos/${repo}/move`, {
+      data: {
+        from: 'notes/todo.md',
+        to: 'notes/backlog.md',
+        fromSha: sha,
+        message: 'Rename notes/todo.md',
+      },
     })
-    expect(gitcloak.status()).toBe(400)
+    expect(move.status()).toBe(200)
+    expect((await move.json()).path).toBe('notes/backlog.md')
 
-    const same = await request.post('/api/repos/mockuser/demo-notes/move', {
-      data: { from: 'welcome.md.age', to: 'welcome.md.age', fromSha: 'a'.repeat(40) },
+    // Same folder, same bytes, under the new name only.
+    const state = await fetchMockState(request)
+    expect(state[repo]['notes/todo.md']).toBeUndefined()
+    expect(state[repo]['notes/backlog.md']).toBe(original)
+  })
+
+  test('move refuses cross-kind renames, .gitcloak, .gitkeep and the same path', async ({
+    request,
+  }) => {
+    const repo = 'mockuser/demo-notes'
+    const bad = [
+      // The `.age` extension is what marks a file as encrypted, so a rename
+      // may not add it to a plain file or drop it from an encrypted one.
+      { from: 'README.md', to: 'x.age' },
+      { from: 'welcome.md.age', to: 'welcome.md' },
+      // The repository metadata and a folder's placeholder are never moved.
+      { from: '.gitcloak', to: 'x.age' },
+      { from: 'welcome.md.age', to: '.gitcloak' },
+      { from: 'notes/todo.md', to: 'notes/.gitkeep' },
+      // A rename must change the name.
+      { from: 'welcome.md.age', to: 'welcome.md.age' },
+      // And the commit message is validated when one is given.
+      { from: 'welcome.md.age', to: 'moved.age', message: 'x'.repeat(201) },
+    ]
+    for (const data of bad) {
+      const response = await request.post(`/api/repos/${repo}/move`, {
+        data: { ...data, fromSha: 'a'.repeat(40) },
+      })
+      expect(response.status(), JSON.stringify(data)).toBe(400)
+    }
+  })
+
+  test('delete removes a file and refuses a stale sha or a protected path', async ({
+    request,
+  }) => {
+    const repo = 'mockuser/demo-notes'
+    const listing = await request.get(`/api/repos/${repo}/contents?path=`)
+    const sha = (await listing.json()).find(
+      (entry: { path: string }) => entry.path === 'README.md'
+    ).sha
+
+    // A sha that no longer matches the file is a conflict, and the file stays.
+    const stale = await request.post(`/api/repos/${repo}/delete`, {
+      data: { path: 'README.md', sha: 'b'.repeat(40) },
     })
-    expect(same.status()).toBe(400)
+    expect(stale.status()).toBe(409)
+    expect((await fetchMockState(request))[repo]['README.md']).toBeDefined()
+
+    const del = await request.post(`/api/repos/${repo}/delete`, {
+      data: { path: 'README.md', sha, message: 'Remove README' },
+    })
+    expect(del.status()).toBe(200)
+    expect((await del.json()).path).toBe('README.md')
+
+    const state = await fetchMockState(request)
+    expect(state[repo]['README.md']).toBeUndefined()
+    // Siblings are untouched.
+    expect(state[repo]['notes/todo.md']).toContain('write tests')
+
+    // The file is gone, so the same delete is now a 404.
+    const again = await request.post(`/api/repos/${repo}/delete`, {
+      data: { path: 'README.md', sha },
+    })
+    expect(again.status()).toBe(404)
+  })
+
+  test('delete refuses .gitcloak, placeholders, .github and a missing sha', async ({
+    request,
+  }) => {
+    const repo = 'mockuser/demo-notes'
+    const bad = [
+      { path: '.gitcloak', sha: 'a'.repeat(40) },
+      { path: 'notes/.gitkeep', sha: 'a'.repeat(40) },
+      { path: '.github/workflows/x.yml.age', sha: 'a'.repeat(40) },
+      { path: '../escape.md', sha: 'a'.repeat(40) },
+      { path: 'README.md' },
+      { path: 'README.md', sha: 'nope' },
+    ]
+    for (const data of bad) {
+      const response = await request.post(`/api/repos/${repo}/delete`, { data })
+      expect(response.status(), JSON.stringify(data)).toBe(400)
+    }
+  })
+
+  test('delete rejects cross-origin browser requests', async ({ request }) => {
+    const response = await request.post('/api/repos/mockuser/demo-notes/delete', {
+      headers: { origin: 'https://evil.example' },
+      data: { path: 'README.md', sha: 'a'.repeat(40) },
+    })
+    expect(response.status()).toBe(403)
   })
 
   test('save rejects plaintext, non-.age paths and workflow paths', async ({ request }) => {
@@ -131,6 +226,31 @@ test.describe('Backend API contract', () => {
       { path: 'plain.md', content: armor },
       { path: '.github/workflows/x.yml.age', content: armor },
       { path: '../escape.age', content: armor },
+    ]
+    for (const data of bad) {
+      const response = await request.post('/api/repos/mockuser/scratch/save', { data })
+      expect(response.status(), JSON.stringify(data)).toBe(400)
+    }
+  })
+
+  test('save stores a declared plain file and refuses a mismatched declaration', async ({
+    request,
+  }) => {
+    const armor = '-----BEGIN AGE ENCRYPTED FILE-----\nfake\n-----END AGE ENCRYPTED FILE-----'
+
+    const plain = await request.post('/api/repos/mockuser/scratch/save', {
+      data: { path: 'public.md', content: '# Public\n', encrypted: false },
+    })
+    expect(plain.status()).toBe(200)
+    expect((await plain.json()).path).toBe('public.md')
+
+    const state = await fetchMockState(request)
+    expect(state['mockuser/scratch']['public.md']).toBe('# Public\n')
+
+    // `.age` marks a file as encrypted, so the two declarations cannot be mixed up.
+    const bad = [
+      { path: 'plain.md.age', content: '# Public\n', encrypted: false },
+      { path: 'plain.md', content: armor },
     ]
     for (const data of bad) {
       const response = await request.post('/api/repos/mockuser/scratch/save', { data })

@@ -3,8 +3,9 @@
  *
  * The routes proxy requests to GitHub with the signed-in user's token, so
  * everything taken from the URL or request body is validated here first. The
- * server also refuses to store anything that is not age ciphertext, so a
- * client bug (or a crafted request) can never commit plaintext.
+ * server also refuses to store anything that is not age ciphertext unless the
+ * request declares the file as plain with `encrypted: false`, so a client bug
+ * (or a crafted request) can never commit plaintext by accident.
  */
 
 const OWNER_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
@@ -14,6 +15,10 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f]/
 
 export const AGE_ARMOR_HEADER = '-----BEGIN AGE ENCRYPTED FILE-----'
 export const GITCLOAK_FILE = '.gitcloak'
+/** Extension of every encrypted file; also what marks a file as encrypted. */
+const FILE_EXTENSION = '.age'
+/** The empty file that keeps a folder in the repository (git stores no empty dir). */
+const FOLDER_PLACEHOLDER = '.gitkeep'
 
 export const MAX_PATH_LENGTH = 512
 export const MAX_MESSAGE_LENGTH = 200
@@ -69,13 +74,27 @@ export function validatePath(path: unknown, { allowRoot = false } = {}): string 
   return path
 }
 
-function validateWritablePath(path: string): void {
+/**
+ * A writable path is either `.gitcloak`, an encrypted `.age` file, or — when
+ * the request declares the file as plain — a path that is *not* `.age`, since
+ * the extension is what marks a file as encrypted.
+ */
+function validateWritablePath(path: string, encrypted: boolean): void {
   // Never let the app write CI configuration or other repository automation.
   if (path.split('/')[0].toLowerCase() === '.github') {
     throw new ValidationError('Writing to .github is not allowed')
   }
-  if (path !== GITCLOAK_FILE && !path.endsWith('.age')) {
-    throw new ValidationError('Only .age files and .gitcloak can be saved')
+  if (path === GITCLOAK_FILE) {
+    return
+  }
+  if (encrypted) {
+    if (!path.endsWith('.age')) {
+      throw new ValidationError('Only .age files and .gitcloak can be saved')
+    }
+    return
+  }
+  if (path.endsWith('.age')) {
+    throw new ValidationError('A plain file cannot use the .age extension')
   }
 }
 
@@ -98,9 +117,31 @@ function validateGitCloakContent(content: string): void {
   }
 }
 
+/**
+ * A commit message is optional wherever it is accepted. An empty one is treated
+ * as absent, and anything longer than `MAX_MESSAGE_LENGTH` or carrying control
+ * characters is refused, so it can never break the commit or smuggle a newline
+ * into it.
+ */
+function validateCommitMessage(message: unknown): string | undefined {
+  if (message === undefined || message === null || message === '') {
+    return undefined
+  }
+  if (
+    typeof message !== 'string' ||
+    message.length > MAX_MESSAGE_LENGTH ||
+    CONTROL_CHARS.test(message)
+  ) {
+    throw new ValidationError('Invalid commit message')
+  }
+  return message
+}
+
 export interface SavePayload {
   path: string
   content: string
+  /** False when the file is stored as plain text; defaults to true (encrypted). */
+  encrypted: boolean
   message?: string
   sha?: string
 }
@@ -109,31 +150,26 @@ export function validateSavePayload(body: unknown): SavePayload {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     throw new ValidationError('Invalid request body')
   }
-  const { path, content, message, sha } = body as Record<string, unknown>
+  const { path, content, message, sha, encrypted } = body as Record<string, unknown>
+
+  if (encrypted !== undefined && typeof encrypted !== 'boolean') {
+    throw new ValidationError('Invalid encrypted flag')
+  }
+  const isEncrypted = encrypted ?? true
 
   const validPath = validatePath(path)
-  validateWritablePath(validPath)
+  validateWritablePath(validPath, isEncrypted)
 
   if (typeof content !== 'string' || content === '') {
     throw new ValidationError('Missing required fields')
   }
   if (validPath === GITCLOAK_FILE) {
     validateGitCloakContent(content)
-  } else if (!content.startsWith(AGE_ARMOR_HEADER)) {
+  } else if (isEncrypted && !content.startsWith(AGE_ARMOR_HEADER)) {
     throw new ValidationError('Refusing to store content that is not age-encrypted')
   }
 
-  let validMessage: string | undefined
-  if (message !== undefined && message !== null && message !== '') {
-    if (
-      typeof message !== 'string' ||
-      message.length > MAX_MESSAGE_LENGTH ||
-      CONTROL_CHARS.test(message)
-    ) {
-      throw new ValidationError('Invalid commit message')
-    }
-    validMessage = message
-  }
+  const validMessage = validateCommitMessage(message)
 
   let validSha: string | undefined
   if (sha !== undefined && sha !== null && sha !== '') {
@@ -143,28 +179,36 @@ export function validateSavePayload(body: unknown): SavePayload {
     validSha = sha
   }
 
-  return { path: validPath, content, message: validMessage, sha: validSha }
+  return { path: validPath, content, encrypted: isEncrypted, message: validMessage, sha: validSha }
 }
 
 export interface MovePayload {
   from: string
   to: string
   fromSha: string
+  message?: string
+}
+
+/** The last segment of a repository-relative path. */
+function basename(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1)
 }
 
 /**
- * Validate a rename of an encrypted file. Only `.age` files may be moved, and
- * the target must pass the same rules as a save.
+ * Validate a rename of a file. Encrypted (`.age`) and plain files may both be
+ * renamed, but never across kinds: the extension is what marks a file as
+ * encrypted, so a rename must keep it. `.gitcloak` is never moved, and neither
+ * is an empty folder's placeholder, whose removal would drop the folder.
  */
 export function validateMovePayload(body: unknown): MovePayload {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     throw new ValidationError('Invalid request body')
   }
-  const { from, to, fromSha } = body as Record<string, unknown>
+  const { from, to, fromSha, message } = body as Record<string, unknown>
 
   const validFrom = validatePath(from)
-  if (!validFrom.endsWith('.age') || validFrom === GITCLOAK_FILE) {
-    throw new ValidationError('Only .age files can be renamed')
+  if (validFrom === GITCLOAK_FILE || basename(validFrom) === FOLDER_PLACEHOLDER) {
+    throw new ValidationError('Only files can be renamed')
   }
   if (validFrom.split('/')[0].toLowerCase() === '.github') {
     throw new ValidationError('Writing to .github is not allowed')
@@ -172,10 +216,14 @@ export function validateMovePayload(body: unknown): MovePayload {
 
   const validTo = validatePath(to)
   // .gitcloak is writable through save, but a rename must never replace it.
-  if (!validTo.endsWith('.age')) {
-    throw new ValidationError('Only .age files can be renamed')
+  if (validTo === GITCLOAK_FILE || basename(validTo) === FOLDER_PLACEHOLDER) {
+    throw new ValidationError('Only files can be renamed')
   }
-  validateWritablePath(validTo)
+  const encrypted = validFrom.endsWith(FILE_EXTENSION)
+  if (validTo.endsWith(FILE_EXTENSION) !== encrypted) {
+    throw new ValidationError('A rename cannot change whether a file is encrypted')
+  }
+  validateWritablePath(validTo, encrypted)
   if (validTo === validFrom) {
     throw new ValidationError('The new name must differ from the old one')
   }
@@ -184,7 +232,41 @@ export function validateMovePayload(body: unknown): MovePayload {
     throw new ValidationError('Invalid sha')
   }
 
-  return { from: validFrom, to: validTo, fromSha }
+  return { from: validFrom, to: validTo, fromSha, message: validateCommitMessage(message) }
+}
+
+export interface DeletePayload {
+  path: string
+  sha: string
+  message?: string
+}
+
+/**
+ * Validate deleting a file. The path must be a file: `.gitcloak` holds the
+ * repository's name key and a folder's `.gitkeep` placeholder is the only thing
+ * keeping that folder in the repository, so neither may be removed here. The
+ * sha is required — it is the blob the caller last saw, and the backend refuses
+ * the delete when the file has changed since, so a stale editor can never
+ * remove someone else's work.
+ */
+export function validateDeletePayload(body: unknown): DeletePayload {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new ValidationError('Invalid request body')
+  }
+  const { path, sha, message } = body as Record<string, unknown>
+
+  const validPath = validatePath(path)
+  if (validPath === GITCLOAK_FILE || basename(validPath) === FOLDER_PLACEHOLDER) {
+    throw new ValidationError('Only files can be deleted')
+  }
+  if (validPath.split('/')[0].toLowerCase() === '.github') {
+    throw new ValidationError('Writing to .github is not allowed')
+  }
+  if (typeof sha !== 'string' || !SHA_PATTERN.test(sha)) {
+    throw new ValidationError('Invalid sha')
+  }
+
+  return { path: validPath, sha, message: validateCommitMessage(message) }
 }
 
 /**

@@ -130,7 +130,7 @@ async function moveRepoFile(
   const response = await fetch(`/api/repos/${owner}/${repo}/move`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, message: 'Encrypt file name' }),
   })
   if (!response.ok) {
     const error = (await response.json().catch(() => ({}))) as { error?: string }

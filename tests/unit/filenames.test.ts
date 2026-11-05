@@ -3,6 +3,7 @@ import {
   decryptEntryName,
   decryptRepoPath,
   encryptEntryName,
+  encryptPlainFilePath,
   encryptRepoPath,
   filenameKeyFromSecret,
   generateFilenameSecret,
@@ -105,6 +106,42 @@ describe('filename encryption', () => {
     await expect(decryptEntryName(`${token}.age`, 'dir', key)).resolves.toBe(`${token}.age`)
     await expect(decryptEntryName(token, 'file', key)).resolves.toBe(token)
     await expect(decryptEntryName(token, 'dir', key)).resolves.toBe('notes')
+  })
+})
+
+describe('plain file paths', () => {
+  let key: FilenameKey
+
+  beforeAll(async () => {
+    key = await filenameKeyFromSecret(SECRET)
+  })
+
+  it('encrypts the folder segments but keeps the file name as typed', async () => {
+    const stored = await encryptPlainFilePath('projects/2024/readme.md', key)
+    const segments = stored.split('/')
+
+    expect(segments).toHaveLength(3)
+    expect(segments[0]).toMatch(/^[a-z2-7]+$/)
+    expect(segments[1]).toMatch(/^[a-z2-7]+$/)
+    expect(segments[2]).toBe('readme.md')
+    expect(stored).not.toMatch(/projects|2024/)
+  })
+
+  it('leaves a file at the repository root alone', async () => {
+    await expect(encryptPlainFilePath('notes.md', key)).resolves.toBe('notes.md')
+  })
+
+  it('lands beside encrypted files, in the same stored folder', async () => {
+    const [plainFolder] = (await encryptPlainFilePath('projects/readme.md', key)).split('/')
+    const [encryptedFolder] = (await encryptRepoPath('projects/secret.md', key)).split('/')
+
+    expect(plainFolder).toBe(encryptedFolder)
+  })
+
+  it('round-trips back to the plain path', async () => {
+    const stored = await encryptPlainFilePath('projects/readme.md', key)
+
+    await expect(decryptRepoPath(stored, key)).resolves.toBe('projects/readme.md')
   })
 })
 

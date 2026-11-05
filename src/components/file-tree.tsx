@@ -28,11 +28,20 @@ interface FileTreeProps {
   repo: string
   /** Set while the repository is unlocked. Names are shown decrypted only then. */
   filenameKey?: FilenameKey | null
-  /** Set while the repository is unlocked. Folders can only be added then. */
+  /** Set while the repository is unlocked. A new folder then gets an encrypted name. */
   isUnlocked?: boolean
   onFileSelect?: (path: string, sha: string) => void
-  /** Asks the owner to create an entry in `parentPath` (plain path, '' for the root). */
-  onCreateEntry?: (kind: 'file' | 'folder', parentPath: string) => void
+  /**
+   * Asks the owner to create an entry in the folder the tree shows.
+   * `parentPath` is the folder's plaintext path while it is known (the
+   * repository is unlocked) and its stored path otherwise; `storedParentPath`
+   * is always the stored path, or null for the repository root.
+   */
+  onCreateEntry?: (
+    kind: 'file' | 'folder',
+    parentPath: string,
+    storedParentPath: string | null
+  ) => void
   onRefresh?: () => void
   selectedFilePath?: string
   onLoadingChange?: (isLoading: boolean) => void
@@ -50,11 +59,15 @@ function sortNodes(nodes: TreeNode[], labelOf: (node: TreeNode) => string): Tree
 
 /**
  * The placeholder that keeps an empty folder in the repository, in either
- * naming scheme. Plain `.gitkeep` files are real files and stay visible.
+ * naming scheme. It is hidden whether the folder is stored under a plain name
+ * (a `.gitkeep` file) or an encrypted one — then the decrypted label is
+ * `.gitkeep`, or, for a repository from before encrypted names, the stored name
+ * is `.gitkeep.age`.
  */
 function isFolderPlaceholder(node: TreeNode, label: string): boolean {
-  if (node.type !== 'file' || !node.name.endsWith('.age')) return false
-  return label === FOLDER_PLACEHOLDER || node.name === `${FOLDER_PLACEHOLDER}.age`
+  if (node.type !== 'file') return false
+  if (label === FOLDER_PLACEHOLDER || node.name === FOLDER_PLACEHOLDER) return true
+  return node.name === `${FOLDER_PLACEHOLDER}.age`
 }
 
 interface RowActionsProps {
@@ -62,21 +75,22 @@ interface RowActionsProps {
   where: string
   /** Stored path of the folder, or '' for the repository root. */
   path: string
-  canAddFile: boolean
-  canAddFolder: boolean
+  /** While the repository is unlocked a new folder gets an encrypted name. */
+  isUnlocked: boolean
   onAddFile: () => void
   onAddFolder: () => void
 }
 
 /**
  * New file and new folder buttons at the end of a tree row. Shown on hover or
- * focus, and always on touch screens where there is no hover.
+ * focus, and always on touch screens where there is no hover. Both are always
+ * enabled: an entry created while the repository is locked (or not set up) is
+ * stored plainly, which needs no password — only an encrypted name needs it.
  */
 function RowActions({
   where,
   path,
-  canAddFile,
-  canAddFolder,
+  isUnlocked,
   onAddFile,
   onAddFolder,
 }: RowActionsProps) {
@@ -91,9 +105,8 @@ function RowActions({
         data-path={path}
         variant="ghost"
         size="icon-xs"
-        title={canAddFile ? `New file in ${where}` : 'Unlock the repository to add items here'}
+        title={`New file in ${where}`}
         aria-label={`New file in ${where}`}
-        disabled={!canAddFile}
         onClick={onAddFile}
       >
         <FilePlus className="size-3" />
@@ -103,9 +116,8 @@ function RowActions({
         data-path={path}
         variant="ghost"
         size="icon-xs"
-        title={canAddFolder ? `New folder in ${where}` : 'Unlock the repository to add items here'}
+        title={isUnlocked ? `New folder in ${where}` : `New plain folder in ${where}`}
         aria-label={`New folder in ${where}`}
-        disabled={!canAddFolder}
         onClick={onAddFolder}
       >
         <FolderPlus className="size-3" />
@@ -138,6 +150,10 @@ export function FileTree({
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  // Stored path of an entry the next load should make visible, set by a refresh
+  // that asks for one. Its folders are opened so a file created at a nested
+  // path shows up even though every folder above it was collapsed.
+  const pendingReveal = useRef<string | null>(null)
 
   useEffect(() => {
     expandedRef.current = expanded
@@ -164,9 +180,19 @@ export function FileTree({
     try {
       // Re-read the open folders too, so a refresh after a save leaves the
       // tree as the user had it. A folder that no longer exists closes.
+      const reveal = pendingReveal.current
+      pendingReveal.current = null
       const openPaths = Object.keys(expandedRef.current).filter(
         (path) => expandedRef.current[path]
       )
+      if (reveal) {
+        // Every folder above the revealed entry, outermost first.
+        const segments = reveal.split('/')
+        for (let depth = 1; depth < segments.length; depth++) {
+          const folder = segments.slice(0, depth).join('/')
+          if (!openPaths.includes(folder)) openPaths.push(folder)
+        }
+      }
       const [root, openFolders] = await Promise.all([
         fetchEntries(''),
         Promise.all(
@@ -224,13 +250,18 @@ export function FileTree({
   }, [filenameKey, rootNodes, children])
 
   // Expose refresh function
+  const refresh = useCallback((revealPath?: string) => {
+    if (revealPath) pendingReveal.current = revealPath
+    setRefreshTrigger((prev) => prev + 1)
+  }, [])
+
   useEffect(() => {
     // Store refresh function on window for parent to call
-    window.__fileTreeRefresh = () => setRefreshTrigger((prev) => prev + 1)
+    window.__fileTreeRefresh = refresh
     return () => {
       delete window.__fileTreeRefresh
     }
-  }, [])
+  }, [refresh])
 
   // Never show a decrypted name while locked, even before the labels catch up.
   const labelOf = (node: TreeNode): string => (filenameKey && labels[node.path]) || node.name
@@ -255,20 +286,23 @@ export function FileTree({
 
   /**
    * Start a new file or folder inside `node`, or at the root when `node` is
-   * null. The folder opens so the new entry shows once it is saved.
+   * null. The folder opens so the new entry shows once it is saved. The stored
+   * path always goes along: while the repository is locked the plain path is
+   * unknown, and even when it is known a plain file is written where it was
+   * clicked rather than into a folder derived from re-encrypting that path.
    */
   const createIn = async (kind: 'file' | 'folder', node: TreeNode | null) => {
     if (!node) {
-      onCreateEntry?.(kind, '')
+      onCreateEntry?.(kind, '', null)
       return
     }
     if (!expanded[node.path]) {
       void toggleDirectory(node)
     }
-    // Folder names are encrypted in storage, so the plain path is what the
-    // new entry needs.
+    // A new *encrypted* name is derived from the folder's plain path, which
+    // needs the name key.
     const parent = filenameKey ? await decryptRepoPath(node.path, filenameKey, 'dir') : node.path
-    onCreateEntry?.(kind, parent)
+    onCreateEntry?.(kind, parent, node.path)
   }
 
   const renderNodes = (nodes: TreeNode[], level: number): ReactNode[] =>
@@ -334,8 +368,7 @@ export function FileTree({
               <RowActions
                 where={label}
                 path={node.path}
-                canAddFile={isUnlocked}
-                canAddFolder={isUnlocked}
+                isUnlocked={isUnlocked}
                 onAddFile={() => void createIn('file', node)}
                 onAddFolder={() => void createIn('folder', node)}
               />
@@ -382,8 +415,7 @@ export function FileTree({
         <RowActions
           where={repo}
           path=""
-          canAddFile
-          canAddFolder={isUnlocked}
+          isUnlocked={isUnlocked}
           onAddFile={() => void createIn('file', null)}
           onAddFolder={() => void createIn('folder', null)}
         />

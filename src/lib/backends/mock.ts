@@ -7,6 +7,7 @@ import {
   BackendNotFoundError,
   type BackendKind,
   type ContentsResult,
+  type DeleteFileParams,
   type DirectoryEntry,
   type FileBackend,
   type MoveFileParams,
@@ -107,6 +108,12 @@ const REPO_SEEDS: MockRepoSeed[] = [
       'notes.md': {
         kind: 'plain',
         content: '# Scratch\n\nNothing secret here yet.\n',
+      },
+      // A folder, so a file can be added inside one before the repository has
+      // ever been set up.
+      'docs/readme.md': {
+        kind: 'plain',
+        content: '# Docs\n\nPlain documentation.\n',
       },
     },
   },
@@ -284,6 +291,22 @@ class MockFileBackend implements FileBackend {
 
     state.summary.updatedAt = new Date().toISOString()
     return { sha: sha1(content), path: to, name: basename(to) }
+  }
+
+  async deleteFile({ owner, repo, path, sha }: DeleteFileParams): Promise<void> {
+    const state = await this.findRepo(owner, repo)
+    const content = state.files.get(path)
+    if (content === undefined) {
+      throw new BackendNotFoundError(path)
+    }
+    if (sha1(content) !== sha) {
+      throw new BackendConflictError(
+        'The file changed on GitHub since it was opened. Reload and try again.'
+      )
+    }
+
+    state.files.delete(path)
+    state.summary.updatedAt = new Date().toISOString()
   }
 
   /** Snapshot of every file so the test harness can assert stored content. */
