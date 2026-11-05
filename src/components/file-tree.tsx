@@ -8,6 +8,7 @@ import {
   File as FileIcon,
   FilePlus,
   FolderPlus,
+  Loader2,
   Lock,
   Pencil,
   Trash2,
@@ -233,7 +234,16 @@ export function FileTree({
   const [loadingDirs, setLoadingDirs] = useState<Record<string, boolean>>({})
   // Plain names keyed by stored path. Only read while `filenameKey` is set.
   const [labels, setLabels] = useState<Record<string, string>>({})
+  // True only for the very first load, when there is nothing to show yet.
   const [isLoading, setIsLoading] = useState(true)
+  // True while an already-loaded tree is re-read. The tree stays on screen and
+  // only gains a spinner, so a refresh never blanks it out.
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  // Whether a load has ever succeeded. The loader reads the ref (a dependency on
+  // the state would re-create it and re-run the load effect on every load);
+  // the render reads the state, which changes exactly when the tree first fills.
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const hasLoadedRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   // Stored path of an entry the next load should make visible, set by a refresh
@@ -260,7 +270,16 @@ export function FileTree({
   )
 
   const loadRootContents = useCallback(async () => {
-    setIsLoading(true)
+    // Re-reading a tree that is already on screen keeps it mounted and says so
+    // with a spinner. The `Loading files…` placeholder is only for the first
+    // load, when there is genuinely nothing to show: replacing the tree on every
+    // refresh is what made it disappear whenever a folder or file was added.
+    const isReload = hasLoadedRef.current
+    if (isReload) {
+      setIsRefreshing(true)
+    } else {
+      setIsLoading(true)
+    }
     onLoadingChange?.(true)
     setError(null)
     try {
@@ -300,12 +319,15 @@ export function FileTree({
       setRootNodes(root)
       setChildren(nextChildren)
       setExpanded(nextExpanded)
+      hasLoadedRef.current = true
+      setHasLoaded(true)
       onRefresh?.()
     } catch (err) {
       console.error('Error loading repository contents:', err)
       setError('Failed to load files')
     } finally {
       setIsLoading(false)
+      setIsRefreshing(false)
       onLoadingChange?.(false)
     }
   }, [fetchEntries, onLoadingChange, onRefresh])
@@ -490,31 +512,60 @@ export function FileTree({
       )
     })
 
-  if (isLoading) {
-    return (
-      <div
-        data-testid="file-tree-loading"
-        className="px-2 py-4 text-[13px] text-muted-foreground"
-      >
-        Loading files…
-      </div>
-    )
+  // The placeholder and the error block are for a tree that has nothing to show
+  // yet. Once one has loaded it is never replaced: a refresh keeps it mounted
+  // and reports itself in the header row instead.
+  if (!hasLoaded) {
+    if (isLoading) {
+      return (
+        <div
+          data-testid="file-tree-loading"
+          className="px-2 py-4 text-[13px] text-muted-foreground"
+        >
+          Loading files…
+        </div>
+      )
+    }
+
+    if (error) {
+      return (
+        <div
+          data-testid="file-tree-error"
+          className="px-2 py-4 text-[13px] text-destructive"
+        >
+          {error}
+        </div>
+      )
+    }
   }
 
-  if (error) {
-    return (
-      <div
-        data-testid="file-tree-error"
-        className="px-2 py-4 text-[13px] text-destructive"
-      >
-        {error}
-      </div>
-    )
-  }
+  /**
+   * The tree's own busy state, in its header row: a spinner while it re-reads
+   * the repository, or the failure of the last attempt. It sits inline so the
+   * rows below it do not move while it is shown.
+   */
+  const status = error ? (
+    <span
+      data-testid="file-tree-error"
+      className="shrink-0 text-[11px] text-destructive"
+    >
+      {error}
+    </span>
+  ) : isRefreshing ? (
+    <span
+      data-testid="file-tree-updating"
+      role="status"
+      title="Updating files…"
+      className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground"
+    >
+      <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+      Updating…
+    </span>
+  ) : null
 
   // The repository row is always shown, so an empty repository can get its first file.
   return (
-    <div className="flex flex-col gap-px">
+    <div className="flex flex-col gap-px" aria-busy={isRefreshing}>
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
@@ -522,6 +573,7 @@ export function FileTree({
             className="group flex items-center gap-1.5 rounded-md py-1 pl-1.5 pr-2 text-[13px] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <span className="truncate">{repo}</span>
+            {status}
           </div>
         </ContextMenuTrigger>
         {/* The repository row is not a file or a folder, so it only creates. */}

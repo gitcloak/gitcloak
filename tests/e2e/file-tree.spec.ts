@@ -7,6 +7,7 @@ import {
   expectEditor,
   fillEditor,
   startNewFileIn,
+  startNewFolder,
   submitPassword,
 } from './helpers'
 
@@ -55,6 +56,89 @@ test.describe('File tree and editor', () => {
     await expect(
       page.locator('[data-testid="file-node"][data-path="README.md"]')
     ).toBeVisible()
+  })
+
+  test('re-reads the repository in place, with a spinner, instead of blanking the tree', async ({
+    page,
+  }) => {
+    await gotoApp(page)
+    await expect(
+      page.locator('[data-testid="file-node"][data-path="README.md"]')
+    ).toBeVisible()
+
+    // Watch the tree from here on. The `Loading files…` placeholder belongs to
+    // the very first load, which has already happened; from now on it is a bug,
+    // and the rows must never be swapped out from under the user.
+    const watchTree = () =>
+      page.evaluate(() => {
+        const flags = window as unknown as {
+          __treePlaceholderSeen?: boolean
+          __treeRowsGone?: boolean
+        }
+        flags.__treePlaceholderSeen = false
+        flags.__treeRowsGone = false
+        new MutationObserver(() => {
+          if (document.querySelector('[data-testid="file-tree-loading"]')) {
+            flags.__treePlaceholderSeen = true
+          }
+          if (document.querySelectorAll('[data-testid="file-node"]').length === 0) {
+            flags.__treeRowsGone = true
+          }
+        }).observe(document.body, { subtree: true, childList: true })
+      })
+
+    const readFlags = () =>
+      page.evaluate(() => {
+        const flags = window as unknown as {
+          __treePlaceholderSeen?: boolean
+          __treeRowsGone?: boolean
+        }
+        return {
+          placeholderSeen: flags.__treePlaceholderSeen,
+          rowsGone: flags.__treeRowsGone,
+        }
+      })
+
+    await watchTree()
+
+    // Hold up every listing so a refresh stays in flight long enough to look at.
+    await page.route('**/api/repos/**/contents**', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      await route.continue()
+    })
+
+    // The refresh that a new folder triggers, through the repository row's menu.
+    // The folder arrives, and the tree it arrived in was never taken off screen
+    // to do it.
+    await startNewFolder(page)
+    await expect(page.getByTestId('new-file-title')).toHaveText('Create New Folder')
+    await page.getByTestId('new-file-input').fill('delayed')
+    await page.getByTestId('new-file-submit').click()
+    await expect(page.getByTestId('notice')).toContainText('Created folder delayed')
+    await expect(page.locator('[data-testid="file-node"][data-name="delayed"]')).toBeVisible()
+
+    const afterCreate = await readFlags()
+    expect(
+      afterCreate.placeholderSeen,
+      'the Loading files… placeholder must not come back on a refresh'
+    ).toBe(false)
+    expect(afterCreate.rowsGone, 'the tree must never be left with no rows').toBe(false)
+
+    // An explicit refresh: mid-flight the tree says it is updating, and the rows
+    // it already had are still on screen.
+    await page.getByTestId('refresh-files-button').click()
+    await expect(page.getByTestId('file-tree-updating')).toBeVisible()
+    expect(await page.getByTestId('file-tree-loading').count()).toBe(0)
+    expect(await page.locator('[data-testid="file-node"]').count()).toBeGreaterThan(0)
+    await expect(page.locator('[data-testid="file-node"][data-name="delayed"]')).toBeVisible()
+
+    // It settles back into the same tree, with the spinner gone.
+    await expect(page.getByTestId('file-tree-updating')).toHaveCount(0)
+    await expect(page.locator('[data-testid="file-node"][data-name="delayed"]')).toBeVisible()
+
+    const afterRefresh = await readFlags()
+    expect(afterRefresh.placeholderSeen, 'the tree must not blank out on a refresh').toBe(false)
+    expect(afterRefresh.rowsGone, 'the tree must never be left with no rows').toBe(false)
   })
 
   test('puts the full path beside the repository and the file name in the title', async ({
