@@ -1,0 +1,37 @@
+<!--
+  The GitCloak app mark, at its 512px artboard.
+
+  Same lockup as the app itself: the brand gradient tile (gc-brand #667eea to
+  gc-brand-alt #764ba2, the gradient of the sidebar medallion and the landing
+  hero) with the white ShieldCheck mark centred on it. The paths are copied
+  from lucide's shield-check (24-unit artboard, 2-unit stroke) so the icon and
+  the in-app mark cannot drift apart.
+
+  Corners are rounded by the platform on top of this (iOS and Android both mask
+  home-screen icons), so the art itself is full-bleed: no baked-in rounding, and
+  no transparency anywhere, because iOS composites a transparent pixel onto
+  black, which is what turns an icon into a blank or black tile.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="GitCloak">
+  <defs>
+    <linearGradient id="gc-mark-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#667eea" />
+      <stop offset="1" stop-color="#764ba2" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#gc-mark-gradient)" />
+  <!-- The 24-unit lucide artboard scaled to 16.5x and centred: the shield
+       measures ~264 x 318 px, well inside the 80% circle a maskable icon has
+       to keep its content in. -->
+  <g
+    transform="translate(58 52.6) scale(16.5)"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+    <path d="m9 12 2 2 4-4" />
+  </g>
+</svg>
