@@ -50,6 +50,11 @@ interface EditorAreaProps {
   /** Whether the open file can be deleted. */
   canDelete: boolean
   onDelete: () => void
+  /**
+   * Reports whether a save is in flight, so the rest of the app can block an
+   * action that would race it (the file tree's delete, for one).
+   */
+  onSavingChange?: (isSaving: boolean) => void
 }
 
 export function EditorArea({
@@ -63,6 +68,7 @@ export function EditorArea({
   onRename,
   canDelete,
   onDelete,
+  onSavingChange,
 }: EditorAreaProps) {
   // The parent keys this component by `openId`, so each opened file starts
   // with fresh state. Saving does not remount the editor, which keeps text the
@@ -151,6 +157,13 @@ export function EditorArea({
       })
       .finally(() => setIsSaving(false))
   }, [isSaving, queued, savedContent, onSave])
+
+  // Tell the app when a save starts and finishes, so anything that would race
+  // it — the file tree's delete — can be blocked while it runs. The parent keys
+  // this component by the open file, so the flag also resets when it unmounts.
+  useEffect(() => {
+    onSavingChange?.(isSaving)
+  }, [isSaving, onSavingChange])
 
   const canSave = Boolean(selectedFile) && hasChanges && !isSaving
   // A save already in flight would recreate the file after the delete, so the
