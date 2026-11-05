@@ -11,7 +11,7 @@ import {
   fillEditor,
   readEditorValue,
   submitPassword,
-  rootNewFileButton,
+  startNewFile,
 } from './helpers'
 
 // Shown once unlocked. The file is stored under an encrypted name.
@@ -255,7 +255,7 @@ test.describe('Live preview editor', () => {
 
   test('shows non-Markdown files as source only, with no view toggle', async ({ page }) => {
     await openFile(page)
-    await rootNewFileButton(page).click()
+    await startNewFile(page)
     await page.getByTestId('new-file-input').fill('draft.txt')
     await page.getByTestId('new-file-submit').click()
     await expect(page.getByTestId('selected-file-path')).toHaveText('draft.txt')

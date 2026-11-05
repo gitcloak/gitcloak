@@ -369,6 +369,16 @@ Rules
   window; dialogs and sheets keep theirs and are unaffected, because their
   trigger is not also a toggle.
 - **Disabled:** `opacity: 0.5` and `cursor: not-allowed`; never hide the control.
+- **Context menu:** right-clicking a file-tree row opens the same menu styled by
+  `ui/context-menu.tsx`, which mirrors `ui/dropdown-menu.tsx` (same surfaces,
+  `rounded-md` items, no exit animation — see *Dismissal* above). It offers only
+  what the API can do for that row: `Rename`/`Delete` act on a file, `New file`/
+  `New folder` on the folder the row sits in. An operation the server refuses —
+  a folder, or `.gitcloak` — stays visible but disabled, with the reason on its
+  `title`, rather than disappearing from the menu. The menu is the **only** entry
+  point for these four actions: no hover buttons on a row and no delete control
+  in the editor header duplicate them, because a second path is a second set of
+  safeguards to keep in step.
 - **Loading:** keep the control in place and change its label (`Processing…`,
   `Saving…`); animate icons with the shared `spin` / `pulse` keyframes.
 - **Empty:** centered, `--gc-fg-subtle`, short sentence + optional 48px icon.

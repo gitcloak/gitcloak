@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { AlertCircle, KeyRound, Lock, ShieldCheck, Trash2 } from 'lucide-react'
 import { AppSidebar, type RepoStatus } from '@/components/app-sidebar'
 import { EditorArea } from '@/components/editor-area'
+import type { FileActionTarget } from '@/components/file-tree'
 import { LoadingOverlay } from '@/components/loading-overlay'
 import { PasswordDialog } from '@/components/password-dialog'
 import { InputDialog } from '@/components/input-dialog'
@@ -32,18 +33,7 @@ interface Repository {
  */
 const GITCLOAK_FILE = '.gitcloak'
 
-/** A file the editor can act on, built from the open file and what the header shows. */
-interface FileActionTarget {
-  /** Stored path of the file. */
-  path: string
-  /** Stored name of the file (with `.age` when it is encrypted). */
-  name: string
-  /** Name shown for the file (decrypted while the repository is unlocked). */
-  label: string
-  /** Blob sha of the file, so a stale rename or delete is refused. */
-  sha: string
-}
-
+/** The file open in the editor, if any. */
 interface SelectedFile {
   path: string
   content: string
@@ -173,6 +163,9 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   // The file each dialog acts on, or null while that dialog is closed.
   const [renameTarget, setRenameTarget] = useState<FileActionTarget | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<FileActionTarget | null>(null)
+  // True while the editor is saving. A delete would race the save's sha, so the
+  // tree's context menu refuses it until the save finishes.
+  const [isSaving, setIsSaving] = useState(false)
 
   const repoKey = selectedRepo ? `${selectedRepo.owner}/${selectedRepo.name}` : null
   // A repository's name key exists only while its password is in memory.
@@ -195,7 +188,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
       : true
     : false
 
-  // What the header shows for the open file, and what a rename or delete acts
+  // What the header shows for the open file, and what the header's rename acts
   // on. The stored name is what GitHub has (`.age` when encrypted); the label is
   // the name shown, which is the plain one once the repository is unlocked.
   const openFileTarget: FileActionTarget | null = selectedFile
@@ -217,13 +210,6 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     !selectedFile?.isNew &&
     openFileTarget?.name !== GITCLOAK_FILE &&
     (!selectedFile?.encrypted || selectedFileKey !== null)
-
-  // A delete only needs the stored path and sha, so it works while locked. The
-  // same three exclusions apply.
-  const canDelete =
-    Boolean(openFileTarget) &&
-    !selectedFile?.isNew &&
-    openFileTarget?.name !== GITCLOAK_FILE
 
   const showNotice = useCallback((type: Notice['type'], message: string) => {
     setNotice({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, type, message })
@@ -707,9 +693,17 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     if (openFileTarget) setRenameTarget(openFileTarget)
   }
 
-  /** Ask before removing the file the editor shows. */
-  const handleDeleteFile = () => {
-    if (openFileTarget) setDeleteTarget(openFileTarget)
+  /**
+   * Rename a file the tree's context menu was opened on. It feeds the same
+   * dialog and submit handler as the header, so the safeguards are shared.
+   */
+  const handleRenameEntry = (target: FileActionTarget) => {
+    setRenameTarget(target)
+  }
+
+  /** Delete a file the tree's context menu was opened on, through the same dialog. */
+  const handleDeleteEntry = (target: FileActionTarget) => {
+    setDeleteTarget(target)
   }
 
   /**
@@ -720,6 +714,17 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   const handleDeleteSubmit = () => {
     const target = deleteTarget
     if (!selectedRepo || !target) return
+
+    // The context menu shows these two cases disabled, but a stray event must
+    // not slip past the shared path.
+    if (target.name === GITCLOAK_FILE) {
+      showNotice('error', 'The repository keeps its .gitcloak file.')
+      return
+    }
+    if (isSaving) {
+      showNotice('error', 'Wait for the current save to finish before deleting.')
+      return
+    }
 
     void (async () => {
       const owner = selectedRepo.owner
@@ -773,6 +778,10 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     if (!selectedRepo || !target) return
 
     const encrypted = target.name.endsWith('.age')
+    if (target.name === GITCLOAK_FILE) {
+      showNotice('error', 'The repository keeps its .gitcloak file.')
+      return
+    }
     let problem = validateFilePath(newName)
     if (!problem && newName.includes('/')) {
       problem = 'Enter a name without "/". Renaming only changes the file name.'
@@ -1195,6 +1204,9 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         repoStatus={repoStatus}
         filenameKey={filenameKey}
         selectedFilePath={selectedFile?.path}
+        onRenameEntry={handleRenameEntry}
+        onDeleteEntry={handleDeleteEntry}
+        isSaving={isSaving}
       />
       <SettingsDialog
         open={settingsOpen}
@@ -1213,8 +1225,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           onSave={handleSaveFile}
           canRename={canRename}
           onRename={handleRenameFile}
-          canDelete={canDelete}
-          onDelete={handleDeleteFile}
+          onSavingChange={setIsSaving}
         />
       </SidebarInset>
     </>
