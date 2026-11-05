@@ -20,7 +20,11 @@ export default async function AppLayout({
     // sidebar inline (collapsible with ⌘B / the trigger), below `md` it swaps
     // the same sidebar into an off-canvas `Sheet`. `h-svh` + `overflow-hidden`
     // pin the shell to the viewport so only the panes inside scroll.
-    <SidebarProvider className="h-svh overflow-hidden">
+    //
+    // `gc-safe-insets` keeps that shell clear of the notch, the status bar and
+    // the home indicator when the app is launched from the home screen, where
+    // it runs edge-to-edge (see the rule in `globals.css`).
+    <SidebarProvider className="gc-safe-insets h-svh overflow-hidden">
       {children}
     </SidebarProvider>
   )

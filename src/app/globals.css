@@ -245,3 +245,20 @@
     @apply bg-background text-foreground;
   }
 }
+
+/*
+ * Standalone install (the viewport asks for `viewport-fit=cover`, so the web
+ * view runs under the status bar, the landscape notch and the home indicator).
+ * Padding the shell by the insets keeps its chrome and its scrolling content out
+ * from under them. Each value is 0 in a browser tab and on a device without
+ * insets, so this is a no-op everywhere else. Chrome cannot emulate the insets,
+ * which is why the on-device launch is the only place this is really seen.
+ */
+@layer utilities {
+  .gc-safe-insets {
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+}
