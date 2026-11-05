@@ -12,9 +12,13 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 
 import { AuthButton } from '@/components/auth-button'
+import { LandingBackground } from '@/components/landing-background'
+import { SpotlightLogo } from '@/components/spotlight-logo'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+
+const MOCK_BACKEND = process.env.NEXT_PUBLIC_MOCK_BACKEND === '1'
 
 const FEATURES = [
   {
@@ -46,6 +50,12 @@ export default function Home() {
   // If user is already signed in, redirect to app
   useEffect(() => {
     if (status === 'authenticated' && session?.user) {
+      // The mock backend always seeds a signed-in session, which would hide
+      // this page from the end-to-end suite. `?stay=1` is honoured in mock
+      // builds only, so production keeps the redirect untouched.
+      if (MOCK_BACKEND && new URLSearchParams(window.location.search).has('stay')) {
+        return
+      }
       router.push('/app')
     }
   }, [status, session, router])
@@ -55,8 +65,9 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-svh flex-col">
-      <header className="flex items-center justify-between gap-4 px-4 py-4 sm:px-8">
+    <div className="relative isolate flex min-h-svh flex-col overflow-hidden">
+      <LandingBackground />
+      <header className="relative z-10 flex items-center justify-between gap-4 px-4 py-4 sm:px-8">
         <div className="flex items-center gap-2">
           <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <ShieldCheck className="size-4" />
@@ -80,12 +91,10 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center gap-12 px-4 py-12 sm:px-8 sm:py-16">
+      <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center gap-12 px-4 py-12 sm:px-8 sm:py-16">
         <div className="flex max-w-2xl flex-col items-center gap-6 text-center">
           <Badge variant="secondary">Encrypted markdown for GitHub</Badge>
-          <h1 className="bg-gradient-to-br from-indigo-500 to-purple-600 bg-clip-text text-4xl font-bold tracking-tight text-transparent sm:text-5xl md:text-6xl">
-            GitCloak
-          </h1>
+          <SpotlightLogo />
           <p className="text-balance text-lg leading-relaxed text-muted-foreground sm:text-xl">
             Secure, encrypted markdown editing for GitHub repositories.
           </p>
