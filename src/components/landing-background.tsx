@@ -5,12 +5,12 @@ import { useEffect, useRef } from 'react'
 /**
  * The drifting particle field behind the landing page.
  *
- * A handful of faint dots wander slowly across the viewport. The cursor does
- * not attract them — it *shoves* them: every particle inside `PUSH_RADIUS` of
- * the pointer picks up a little outward velocity, which then decays so the
- * particle settles back onto its own drift. Everything stays deliberately dim
- * (`--gc-accent` at ~20–40% alpha) so the headline and the call to action keep
- * the reader's attention.
+ * A soft field of glowing motes wanders slowly across the viewport. Each mote
+ * is a pre-rendered radial sprite (bright centre fading to nothing) rather than
+ * a hard dot, so the field reads as a lit haze instead of scattered pixels. The
+ * cursor does not attract them — it *shoves* them: every particle inside
+ * `PUSH_RADIUS` of the pointer picks up a little outward velocity, which then
+ * decays so the particle settles back onto its own drift.
  *
  * The canvas is decorative and inert: it is `aria-hidden` and
  * `pointer-events-none`, so it can never swallow a click meant for a link.
@@ -30,7 +30,15 @@ interface Particle {
   alpha: number
 }
 
-const PARTICLE_COUNT = 48
+const PARTICLE_COUNT = 150
+/**
+ * Each mote is drawn from this square offscreen sprite, scaled to the
+ * particle's size. Rendering the glow once and blitting it per frame is far
+ * cheaper than building a radial gradient per particle per frame.
+ */
+const SPRITE_SIZE = 64
+/** Sprite width as a multiple of the particle's core radius. */
+const SPRITE_SCALE = 6
 /** How close (px) the pointer must come before it shoves a particle. */
 const PUSH_RADIUS = 130
 /** Push velocity gained per frame at the centre of the pointer's reach. */
@@ -43,6 +51,31 @@ const PUSH_SETTLE = 0.93
 function readToken(canvas: HTMLCanvasElement, token: string, fallback: string) {
   const value = getComputedStyle(canvas).getPropertyValue(token).trim()
   return value || fallback
+}
+
+/**
+ * A single glowing mote: a white radial falloff, tinted to `tint` via
+ * `source-in` so any CSS colour form works (the `--gc-accent` token is a hex
+ * today, but it need not be).
+ */
+function makeSprite(tint: string): HTMLCanvasElement | null {
+  const sprite = document.createElement('canvas')
+  sprite.width = SPRITE_SIZE
+  sprite.height = SPRITE_SIZE
+  const sctx = sprite.getContext('2d')
+  if (!sctx) return null
+  const centre = SPRITE_SIZE / 2
+  const glow = sctx.createRadialGradient(centre, centre, 0, centre, centre, centre)
+  glow.addColorStop(0, 'rgba(255, 255, 255, 1)')
+  glow.addColorStop(0.28, 'rgba(255, 255, 255, 0.55)')
+  glow.addColorStop(0.62, 'rgba(255, 255, 255, 0.13)')
+  glow.addColorStop(1, 'rgba(255, 255, 255, 0)')
+  sctx.fillStyle = glow
+  sctx.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE)
+  sctx.globalCompositeOperation = 'source-in'
+  sctx.fillStyle = tint
+  sctx.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE)
+  return sprite
 }
 
 export function LandingBackground() {
@@ -64,6 +97,7 @@ export function LandingBackground() {
     // Particles are painted with the accent token so the field follows the
     // light/dark theme; the observer below re-reads it when `dark` toggles.
     let color = readToken(canvas, '--gc-accent', '#0969da')
+    let sprite = makeSprite(color)
 
     const particles: Particle[] = []
     const pointer = { x: -1e5, y: -1e5, active: false }
@@ -78,20 +112,19 @@ export function LandingBackground() {
           vy: (Math.random() - 0.5) * 0.5,
           ox: 0,
           oy: 0,
-          radius: 1 + Math.random() * 1.4,
-          alpha: 0.18 + Math.random() * 0.22,
+          radius: 1 + Math.random() * 1.6,
+          alpha: 0.3 + Math.random() * 0.34,
         })
       }
     }
 
     const draw = () => {
       ctx.clearRect(0, 0, width, height)
-      ctx.fillStyle = color
+      if (!sprite) return
       for (const particle of particles) {
+        const size = particle.radius * SPRITE_SCALE
         ctx.globalAlpha = particle.alpha
-        ctx.beginPath()
-        ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2)
-        ctx.fill()
+        ctx.drawImage(sprite, particle.x - size / 2, particle.y - size / 2, size, size)
       }
       ctx.globalAlpha = 1
     }
@@ -186,6 +219,7 @@ export function LandingBackground() {
 
     const themeObserver = new MutationObserver(() => {
       color = readToken(canvas, '--gc-accent', color)
+      sprite = makeSprite(color)
       if (!running) draw()
     })
     themeObserver.observe(document.documentElement, {

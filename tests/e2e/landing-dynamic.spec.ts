@@ -153,6 +153,36 @@ test.describe('Landing page dynamics', () => {
       .toBe('0')
   })
 
+  test('the spotlight is a big irregular form that keeps changing', async ({
+    page,
+  }) => {
+    await page.goto(LANDING)
+    const logo = page.getByTestId('spotlight-logo')
+    const lit = page.getByTestId('spotlight-logo-lit')
+
+    const box = (await logo.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await expect(logo).toHaveAttribute('data-spotlight', 'active')
+
+    const maskOf = () => lit.evaluate((el) => getComputedStyle(el).maskImage)
+    const first = await maskOf()
+
+    // A big main lobe...
+    expect(first).toContain('200px')
+    // ...union of several overlapping lobes, so the edge is irregular...
+    expect(first.match(/radial-gradient/g)?.length ?? 0).toBeGreaterThan(1)
+    // ...and the falloff is spread across the lobe rather than a tight circle.
+    expect(first).toContain('80%')
+
+    // The lobes orbit, so the form keeps changing while the light is live.
+    let changed = false
+    for (let i = 0; i < 12 && !changed; i += 1) {
+      await page.waitForTimeout(150)
+      changed = (await maskOf()) !== first
+    }
+    expect(changed, 'the spotlight form should change over time').toBe(true)
+  })
+
   test('prefers-reduced-motion holds a still frame and a lit logo', async ({
     page,
   }) => {
