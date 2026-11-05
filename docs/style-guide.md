@@ -344,6 +344,26 @@ Rules
 - `SidebarProvider` persists its collapsed state in a cookie; do not add local
   state for it.
 
+### 6.9 Landing hero
+
+The marketing page (`src/app/page.tsx`) is the one surface outside the shell,
+and it carries the only motion in the app:
+
+- **Logo.** `SpotlightLogo` renders the lockup — the `ShieldCheck` medallion
+  plus the wordmark — twice, stacked in the same box: a faint outline
+  (`--gc-fg-subtle`, the wordmark stroked with `-webkit-text-stroke` rather
+  than filled) and the lit copy on top, masked by a radial gradient centred on
+  the pointer. Both copies render the same `GitCloakMark`, so they cannot drift
+  apart. There is no SVG asset — do not add one.
+- **Background.** `LandingBackground` paints the drifting particle field on a
+  `pointer-events-none` canvas in `--gc-accent` at ~20–40% alpha. It is
+  decorative (`aria-hidden`) and must never sit in front of a link or button.
+- **Reduced motion.** `prefers-reduced-motion: reduce` — or a device without a
+  hovering pointer — gets the lit logo held still and a single still particle
+  frame. Motion is never merely slowed.
+- Both layers read `--gc-*` tokens, so light and dark come for free; the canvas
+  re-reads `--gc-accent` when the `dark` class flips.
+
 ---
 
 ## 7. States & interaction
