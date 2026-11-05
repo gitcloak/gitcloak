@@ -350,6 +350,13 @@ Rules
 
 - **Hover:** backgrounds shift one surface step (`surface → canvas`); borders
   may darken to `--gc-border-strong`; links fade to `opacity: 0.7`.
+- **Selected:** the row that is open — the file in the editor — is tinted with
+  `--gc-accent` (`bg-gc-accent/10`) **and** carries a 2px `--gc-accent` bar on
+  its left edge. The bar is what makes it distinguishable at a glance: a tint
+  alone sits too close to the hover fill. Hovering a selected row deepens the
+  tint (`bg-gc-accent/20`) instead of replacing it with the hover fill. The 2px
+  left border is present (transparent) on every tree row so the labels stay
+  aligned; only its colour changes.
 - **Focus:** `focus-visible:ring-1` using `--gc-accent`. Never remove the ring.
   This is implemented once in `ui/input.tsx` (`focus-visible:border-gc-accent
   focus-visible:ring-1 focus-visible:ring-gc-accent/60`) rather than per-field,
