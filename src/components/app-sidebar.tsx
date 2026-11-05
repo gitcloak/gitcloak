@@ -40,7 +40,7 @@ import {
 import type { FilenameKey } from '@/lib/filenames'
 import { cn } from '@/lib/utils'
 
-import { FileTree } from './file-tree'
+import { FileTree, type FileActionTarget } from './file-tree'
 
 /** Visual state of the selected repository's lock. */
 export type RepoStatus = 'checking' | 'uninitialized' | 'locked' | 'unlocked'
@@ -121,6 +121,12 @@ interface AppSidebarProps {
   /** Present while the selected repository is unlocked; file names are decrypted with it. */
   filenameKey?: FilenameKey | null
   selectedFilePath?: string
+  /** Asks the owner to rename a file the tree's context menu was opened on. */
+  onRenameEntry?: (target: FileActionTarget) => void
+  /** Asks the owner to delete a file the tree's context menu was opened on. */
+  onDeleteEntry?: (target: FileActionTarget) => void
+  /** True while the open file is being saved; the tree's delete is blocked then. */
+  isSaving?: boolean
 }
 
 export function AppSidebar({
@@ -137,6 +143,9 @@ export function AppSidebar({
   repoStatus = 'checking',
   filenameKey = null,
   selectedFilePath,
+  onRenameEntry,
+  onDeleteEntry,
+  isSaving = false,
 }: AppSidebarProps) {
   const isRepoUnlocked = repoStatus === 'unlocked'
   const { isMobile, setOpenMobile } = useSidebar()
@@ -315,6 +324,9 @@ export function AppSidebar({
                 }}
                 selectedFilePath={selectedFilePath}
                 onLoadingChange={handleLoadingChange}
+                onRenameEntry={onRenameEntry}
+                onDeleteEntry={onDeleteEntry}
+                isSaving={isSaving}
               />
             ) : (
               <p className="px-2 py-4 text-center text-sm text-gc-fg-subtle italic">

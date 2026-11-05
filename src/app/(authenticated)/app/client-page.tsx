@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { AlertCircle, KeyRound, Lock, ShieldCheck, Trash2 } from 'lucide-react'
 import { AppSidebar, type RepoStatus } from '@/components/app-sidebar'
 import { EditorArea } from '@/components/editor-area'
+import type { FileActionTarget } from '@/components/file-tree'
 import { LoadingOverlay } from '@/components/loading-overlay'
 import { PasswordDialog } from '@/components/password-dialog'
 import { InputDialog } from '@/components/input-dialog'
@@ -32,18 +33,7 @@ interface Repository {
  */
 const GITCLOAK_FILE = '.gitcloak'
 
-/** A file the editor can act on, built from the open file and what the header shows. */
-interface FileActionTarget {
-  /** Stored path of the file. */
-  path: string
-  /** Stored name of the file (with `.age` when it is encrypted). */
-  name: string
-  /** Name shown for the file (decrypted while the repository is unlocked). */
-  label: string
-  /** Blob sha of the file, so a stale rename or delete is refused. */
-  sha: string
-}
-
+/** The file open in the editor, if any. */
 interface SelectedFile {
   path: string
   content: string
@@ -173,6 +163,9 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   // The file each dialog acts on, or null while that dialog is closed.
   const [renameTarget, setRenameTarget] = useState<FileActionTarget | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<FileActionTarget | null>(null)
+  // True while the editor is saving. A delete would race the save's sha, so the
+  // tree's context menu refuses it, exactly like the header's delete button.
+  const [isSaving, setIsSaving] = useState(false)
 
   const repoKey = selectedRepo ? `${selectedRepo.owner}/${selectedRepo.name}` : null
   // A repository's name key exists only while its password is in memory.
@@ -713,6 +706,19 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   }
 
   /**
+   * Rename a file the tree's context menu was opened on. It feeds the same
+   * dialog and submit handler as the header, so the safeguards are shared.
+   */
+  const handleRenameEntry = (target: FileActionTarget) => {
+    setRenameTarget(target)
+  }
+
+  /** Delete a file the tree's context menu was opened on, through the same dialog. */
+  const handleDeleteEntry = (target: FileActionTarget) => {
+    setDeleteTarget(target)
+  }
+
+  /**
    * Delete a file from the repository. The stored bytes go away; the file stays
    * in the repository's Git history. A plain file and an encrypted one are both
    * addressed by their stored path, so this needs no password.
@@ -720,6 +726,17 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   const handleDeleteSubmit = () => {
     const target = deleteTarget
     if (!selectedRepo || !target) return
+
+    // The header hides these two cases instead. The tree's context menu shows
+    // the item disabled, but a stray event must not slip past the shared path.
+    if (target.name === GITCLOAK_FILE) {
+      showNotice('error', 'The repository keeps its .gitcloak file.')
+      return
+    }
+    if (isSaving) {
+      showNotice('error', 'Wait for the current save to finish before deleting.')
+      return
+    }
 
     void (async () => {
       const owner = selectedRepo.owner
@@ -773,6 +790,10 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
     if (!selectedRepo || !target) return
 
     const encrypted = target.name.endsWith('.age')
+    if (target.name === GITCLOAK_FILE) {
+      showNotice('error', 'The repository keeps its .gitcloak file.')
+      return
+    }
     let problem = validateFilePath(newName)
     if (!problem && newName.includes('/')) {
       problem = 'Enter a name without "/". Renaming only changes the file name.'
@@ -1195,6 +1216,9 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         repoStatus={repoStatus}
         filenameKey={filenameKey}
         selectedFilePath={selectedFile?.path}
+        onRenameEntry={handleRenameEntry}
+        onDeleteEntry={handleDeleteEntry}
+        isSaving={isSaving}
       />
       <SettingsDialog
         open={settingsOpen}
@@ -1215,6 +1239,7 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
           onRename={handleRenameFile}
           canDelete={canDelete}
           onDelete={handleDeleteFile}
+          onSavingChange={setIsSaving}
         />
       </SidebarInset>
     </>

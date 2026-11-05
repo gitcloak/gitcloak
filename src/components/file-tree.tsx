@@ -9,17 +9,48 @@ import {
   FilePlus,
   FolderPlus,
   Lock,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 import { decryptEntryName, decryptRepoPath, FOLDER_PLACEHOLDER, type FilenameKey } from '@/lib/filenames'
 import { cn } from '@/lib/utils'
+
+/**
+ * The repository's own metadata file, in the stored tree. It is never renamed
+ * or deleted — the server refuses both — so its context menu offers neither.
+ */
+const GITCLOAK_FILE = '.gitcloak'
 
 /** A row as stored in the repository. `name` and `path` are what GitHub has. */
 interface TreeNode {
   name: string
   path: string
   type: 'file' | 'dir'
+  sha: string
+}
+
+/**
+ * A file the tree can rename or delete on the owner's behalf. Built from the
+ * row that was right-clicked, so the action targets that row rather than the
+ * file open in the editor.
+ */
+export interface FileActionTarget {
+  /** Stored path of the file. */
+  path: string
+  /** Stored name of the file (with `.age` when it is encrypted). */
+  name: string
+  /** Name shown for the file (decrypted while the repository is unlocked). */
+  label: string
+  /** Blob sha of the file, so a stale rename or delete is refused. */
   sha: string
 }
 
@@ -45,6 +76,18 @@ interface FileTreeProps {
   onRefresh?: () => void
   selectedFilePath?: string
   onLoadingChange?: (isLoading: boolean) => void
+  /**
+   * Asks the owner to rename the file a context menu was opened on. The same
+   * flow the editor header uses, so the same safeguards apply.
+   */
+  onRenameEntry?: (target: FileActionTarget) => void
+  /** Asks the owner to delete the file a context menu was opened on. */
+  onDeleteEntry?: (target: FileActionTarget) => void
+  /**
+   * True while a save is in flight. A delete would race the save's sha, so the
+   * context menu refuses it until the save finishes.
+   */
+  isSaving?: boolean
 }
 
 /** Directories first, then files, each alphabetically by the label they show. */
@@ -126,6 +169,105 @@ function RowActions({
   )
 }
 
+/**
+ * Why Rename is unavailable for a row, or null when it is offered.
+ *
+ * A folder has no rename in the API — the move route renames files, and it
+ * refuses a folder's placeholder — so the item is shown disabled rather than
+ * silently missing (style guide §7: never hide a control). An encrypted file's
+ * new stored name is derived from its plain name, which is only known while
+ * the repository is unlocked.
+ */
+function renameBlockedReason(node: TreeNode, filenameKey: FilenameKey | null): string | null {
+  if (node.type === 'dir') return 'Folders cannot be renamed yet.'
+  if (node.name === GITCLOAK_FILE) return 'The repository keeps its .gitcloak file.'
+  if (node.name.endsWith('.age') && !filenameKey) {
+    return 'Unlock the repository to rename an encrypted file.'
+  }
+  return null
+}
+
+/** Why Delete is unavailable for a row, or null when it is offered. */
+function deleteBlockedReason(node: TreeNode, isSaving: boolean): string | null {
+  if (node.type === 'dir') return 'Folders cannot be deleted yet.'
+  if (node.name === GITCLOAK_FILE) return 'The repository keeps its .gitcloak file.'
+  if (isSaving) return 'Wait for the current save to finish.'
+  return null
+}
+
+interface EntryMenuProps {
+  /** The row's entry, or null for the repository row. */
+  node: TreeNode | null
+  /** Name the row shows for the entry (decrypted while the repository is unlocked). */
+  label: string
+  /** Name of the folder (or repository) the create items add to. */
+  where: string
+  filenameKey: FilenameKey | null
+  isSaving: boolean
+  onRename?: () => void
+  onDelete?: () => void
+  onAddFile: () => void
+  onAddFolder: () => void
+}
+
+/**
+ * The right-click menu for one tree row: Rename and Delete for the file the
+ * row holds, then New file and New folder in the folder the row belongs to.
+ * Rename and Delete reuse the flows behind the editor header, including their
+ * safeguards, so there is one path for each operation.
+ */
+function EntryMenu({
+  node,
+  label,
+  where,
+  filenameKey,
+  isSaving,
+  onRename,
+  onDelete,
+  onAddFile,
+  onAddFolder,
+}: EntryMenuProps) {
+  const renameReason = node ? renameBlockedReason(node, filenameKey) : null
+  const deleteReason = node ? deleteBlockedReason(node, isSaving) : null
+
+  return (
+    <>
+      {node && (
+        <>
+          <ContextMenuItem
+            data-testid="tree-menu-rename"
+            disabled={renameReason !== null}
+            title={renameReason ?? `Rename ${label}`}
+            onSelect={onRename}
+          >
+            <Pencil className="size-3.5" />
+            Rename
+          </ContextMenuItem>
+          <ContextMenuItem
+            data-testid="tree-menu-delete"
+            variant="destructive"
+            disabled={deleteReason !== null}
+            title={deleteReason ?? `Delete ${label}`}
+            onSelect={onDelete}
+          >
+            <Trash2 className="size-3.5" />
+            Delete
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+        </>
+      )}
+      <ContextMenuItem data-testid="tree-menu-new-file" onSelect={onAddFile}>
+        <FilePlus className="size-3.5" />
+        New file in {where}
+      </ContextMenuItem>
+      <ContextMenuItem data-testid="tree-menu-new-folder" onSelect={onAddFolder}>
+        <FolderPlus className="size-3.5" />
+        New folder in {where}
+      </ContextMenuItem>
+    </>
+  )
+}
+
 export function FileTree({
   owner,
   repo,
@@ -136,6 +278,9 @@ export function FileTree({
   onRefresh,
   selectedFilePath,
   onLoadingChange,
+  onRenameEntry,
+  onDeleteEntry,
+  isSaving = false,
 }: FileTreeProps) {
   const [rootNodes, setRootNodes] = useState<TreeNode[]>([])
   // Loaded folder contents keyed by stored path. The tree keeps them here
@@ -305,7 +450,11 @@ export function FileTree({
     onCreateEntry?.(kind, parent, node.path)
   }
 
-  const renderNodes = (nodes: TreeNode[], level: number): ReactNode[] =>
+  const renderNodes = (
+    nodes: TreeNode[],
+    level: number,
+    parent: TreeNode | null
+  ): ReactNode[] =>
     sortNodes(
       nodes.filter((node) => !isFolderPlaceholder(node, labelOf(node))),
       labelOf
@@ -316,71 +465,94 @@ export function FileTree({
       const label = labelOf(node)
       // `.age` files are encrypted whether or not the repository is unlocked.
       const isProtected = !isDir && node.name.endsWith('.age')
+      // The folder a file row's create items add to: the folder that holds the
+      // row, which is the viewport's own folder for a file and the row itself
+      // for a folder. `null` means the repository root.
+      const createParent = isDir ? node : parent
+      const where = createParent ? labelOf(createParent) : repo
+      const entryTarget = { path: node.path, name: node.name, label, sha: node.sha }
 
       return (
         <div key={node.path}>
-          <div
-            data-testid="file-node"
-            data-path={node.path}
-            data-name={label}
-            data-node-type={node.type}
-            data-protected={isProtected}
-            data-selected={isSelected}
-            onClick={() => (isDir ? void toggleDirectory(node) : onFileSelect?.(node.path, node.sha))}
-            // The 2px left border is on every row so the labels stay aligned;
-            // only its colour changes on the selected row, where it is the
-            // accent bar that marks the file open in the editor.
-            style={{ paddingLeft: `${level * 12 + 4}px` }}
-            className={cn(
-              'group flex cursor-pointer items-center gap-1.5 rounded-md border-l-2 border-transparent py-1 pr-2 text-[13px] transition-colors',
-              isSelected
-                ? // A stronger tint than hover, plus the accent bar, so the open
-                  // file reads as selected rather than merely hovered.
-                  'border-gc-accent bg-gc-accent/10 font-medium text-sidebar-foreground hover:bg-gc-accent/20'
-                : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
-            )}
-          >
-            {isDir ? (
-              <span className="flex w-3 shrink-0 items-center justify-center text-muted-foreground">
-                {loadingDirs[node.path] ? (
-                  <Ellipsis className="size-3" />
-                ) : isExpanded ? (
-                  <ChevronDown className="size-3" />
-                ) : (
-                  <ChevronRight className="size-3" />
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <div
+                data-testid="file-node"
+                data-path={node.path}
+                data-name={label}
+                data-node-type={node.type}
+                data-protected={isProtected}
+                data-selected={isSelected}
+                onClick={() => (isDir ? void toggleDirectory(node) : onFileSelect?.(node.path, node.sha))}
+                // The 2px left border is on every row so the labels stay aligned;
+                // only its colour changes on the selected row, where it is the
+                // accent bar that marks the file open in the editor.
+                style={{ paddingLeft: `${level * 12 + 4}px` }}
+                className={cn(
+                  'group flex cursor-pointer items-center gap-1.5 rounded-md border-l-2 border-transparent py-1 pr-2 text-[13px] transition-colors',
+                  isSelected
+                    ? // A stronger tint than hover, plus the accent bar, so the open
+                      // file reads as selected rather than merely hovered.
+                      'border-gc-accent bg-gc-accent/10 font-medium text-sidebar-foreground hover:bg-gc-accent/20'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                 )}
-              </span>
-            ) : isProtected ? (
-              <span
-                className="flex w-3 shrink-0 items-center justify-center text-sidebar-foreground"
-                title="Encrypted file"
-                aria-label="Encrypted file"
               >
-                <Lock className="size-3" />
-              </span>
-            ) : (
-              <span
-                className="flex w-3 shrink-0 items-center justify-center text-muted-foreground"
-                title="Plain file"
-                aria-label="Plain file"
-              >
-                <FileIcon className="size-3" />
-              </span>
-            )}
-            <span className="truncate">{label}</span>
-            {isDir && (
-              <RowActions
-                where={label}
-                path={node.path}
-                isUnlocked={isUnlocked}
-                onAddFile={() => void createIn('file', node)}
-                onAddFolder={() => void createIn('folder', node)}
+                {isDir ? (
+                  <span className="flex w-3 shrink-0 items-center justify-center text-muted-foreground">
+                    {loadingDirs[node.path] ? (
+                      <Ellipsis className="size-3" />
+                    ) : isExpanded ? (
+                      <ChevronDown className="size-3" />
+                    ) : (
+                      <ChevronRight className="size-3" />
+                    )}
+                  </span>
+                ) : isProtected ? (
+                  <span
+                    className="flex w-3 shrink-0 items-center justify-center text-sidebar-foreground"
+                    title="Encrypted file"
+                    aria-label="Encrypted file"
+                  >
+                    <Lock className="size-3" />
+                  </span>
+                ) : (
+                  <span
+                    className="flex w-3 shrink-0 items-center justify-center text-muted-foreground"
+                    title="Plain file"
+                    aria-label="Plain file"
+                  >
+                    <FileIcon className="size-3" />
+                  </span>
+                )}
+                <span className="truncate">{label}</span>
+                {isDir && (
+                  <RowActions
+                    where={label}
+                    path={node.path}
+                    isUnlocked={isUnlocked}
+                    onAddFile={() => void createIn('file', node)}
+                    onAddFolder={() => void createIn('folder', node)}
+                  />
+                )}
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent data-testid="tree-context-menu" data-path={node.path}>
+              <EntryMenu
+                node={node}
+                label={label}
+                where={where}
+                filenameKey={filenameKey}
+                isSaving={isSaving}
+                onRename={() => onRenameEntry?.(entryTarget)}
+                onDelete={() => onDeleteEntry?.(entryTarget)}
+                onAddFile={() => void createIn('file', createParent)}
+                onAddFolder={() => void createIn('folder', createParent)}
               />
-            )}
-          </div>
+            </ContextMenuContent>
+          </ContextMenu>
 
           {isDir && isExpanded && children[node.path] && (
-            <div>{renderNodes(children[node.path], level + 1)}</div>
+            <div>{renderNodes(children[node.path], level + 1, node)}</div>
           )}
         </div>
       )
@@ -411,19 +583,35 @@ export function FileTree({
   // The repository row is always shown, so an empty repository can get its first file.
   return (
     <div className="flex flex-col gap-px">
-      <div
-        data-testid="tree-root"
-        className="group flex items-center gap-1.5 rounded-md py-1 pl-1.5 pr-2 text-[13px] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-      >
-        <span className="truncate">{repo}</span>
-        <RowActions
-          where={repo}
-          path=""
-          isUnlocked={isUnlocked}
-          onAddFile={() => void createIn('file', null)}
-          onAddFolder={() => void createIn('folder', null)}
-        />
-      </div>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            data-testid="tree-root"
+            className="group flex items-center gap-1.5 rounded-md py-1 pl-1.5 pr-2 text-[13px] font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <span className="truncate">{repo}</span>
+            <RowActions
+              where={repo}
+              path=""
+              isUnlocked={isUnlocked}
+              onAddFile={() => void createIn('file', null)}
+              onAddFolder={() => void createIn('folder', null)}
+            />
+          </div>
+        </ContextMenuTrigger>
+        {/* The repository row is not a file or a folder, so it only creates. */}
+        <ContextMenuContent data-testid="tree-context-menu" data-path="">
+          <EntryMenu
+            node={null}
+            label={repo}
+            where={repo}
+            filenameKey={filenameKey}
+            isSaving={isSaving}
+            onAddFile={() => void createIn('file', null)}
+            onAddFolder={() => void createIn('folder', null)}
+          />
+        </ContextMenuContent>
+      </ContextMenu>
 
       {rootNodes.length === 0 ? (
         <div
@@ -433,7 +621,7 @@ export function FileTree({
           No files found
         </div>
       ) : (
-        renderNodes(rootNodes, 0)
+        renderNodes(rootNodes, 0, null)
       )}
     </div>
   )
