@@ -1,42 +1,43 @@
-import type { Page } from '@playwright/test'
 import {
   test,
   expect,
   gotoApp,
   fetchMockState,
   fillEditor,
-  rootNewFileButton,
+  openRootMenu,
+  openRowMenuByName,
+  startNewFile,
+  startNewFileIn,
+  startNewFolder,
+  startNewFolderIn,
   selectRepo,
   storedPathOf,
   submitPassword,
 } from './helpers'
 
-const rootNewFolderButton = (page: Page) =>
-  page.locator('[data-testid="tree-new-folder-button"][data-path=""]')
-
 test.describe('Folders in the file tree', () => {
-  test('file and folder buttons work without an unlocked repository', async ({ page }) => {
+  test('file and folder actions work without an unlocked repository', async ({ page }) => {
     await gotoApp(page)
 
-    // demo-notes is locked, but neither button needs the password: a folder
+    // demo-notes is locked, but neither action needs the password: a folder
     // created now is plain, and a plain file needs nothing either.
     await expect(page.getByTestId('repo-lock-status')).toContainText('Locked')
-    await expect(rootNewFolderButton(page)).toBeEnabled()
-    await expect(rootNewFileButton(page)).toBeEnabled()
+    await openRootMenu(page)
+    await expect(page.getByTestId('tree-menu-new-folder')).toBeEnabled()
+    await expect(page.getByTestId('tree-menu-new-file')).toBeEnabled()
+    await page.keyboard.press('Escape')
+
     // The same holds inside a folder, even while the repository is locked.
-    await expect(
-      page.locator('[data-testid="file-node"][data-name="notes"] [data-testid="tree-new-file-button"]')
-    ).toBeEnabled()
-    await expect(
-      page.locator('[data-testid="file-node"][data-name="notes"] [data-testid="tree-new-folder-button"]')
-    ).toBeEnabled()
+    await openRowMenuByName(page, 'notes')
+    await expect(page.getByTestId('tree-menu-new-file')).toBeEnabled()
+    await expect(page.getByTestId('tree-menu-new-folder')).toBeEnabled()
   })
 
   test('creates a plain folder while the repository is locked', async ({ page, request }) => {
     await gotoApp(page)
     await expect(page.getByTestId('repo-lock-status')).toContainText('Locked')
 
-    await rootNewFolderButton(page).click()
+    await startNewFolder(page)
     await expect(page.getByTestId('new-file-title')).toHaveText('Create New Folder')
     // The dialog says so: with no password the folder is stored plainly.
     await expect(page.getByTestId('new-file-description')).toContainText('plain folder')
@@ -66,7 +67,7 @@ test.describe('Folders in the file tree', () => {
       'uninitialized'
     )
 
-    await rootNewFolderButton(page).click()
+    await startNewFolder(page)
     await expect(page.getByTestId('new-file-description')).toContainText('plain folder')
     await page.getByTestId('new-file-input').fill('archive')
     await page.getByTestId('new-file-submit').click()
@@ -92,9 +93,7 @@ test.describe('Folders in the file tree', () => {
 
     // Open the seeded plain folder, then start a file inside it.
     await page.locator('[data-testid="file-node"][data-name="notes"]').click()
-    await page
-      .locator('[data-testid="file-node"][data-name="notes"] [data-testid="tree-new-file-button"]')
-      .click()
+    await startNewFileIn(page, 'notes')
 
     // Locked, so the dialog offers only a plain file: Encrypted is disabled and
     // Plain is preselected.
@@ -136,9 +135,7 @@ test.describe('Folders in the file tree', () => {
 
     // Start a plain file inside the seeded folder while the repository is locked.
     await page.locator('[data-testid="file-node"][data-name="notes"]').click()
-    await page
-      .locator('[data-testid="file-node"][data-name="notes"] [data-testid="tree-new-file-button"]')
-      .click()
+    await startNewFileIn(page, 'notes')
     await expect(page.getByTestId('new-file-encryption-encrypted')).toBeDisabled()
     await page.getByTestId('new-file-input').fill('later.md')
     await page.getByTestId('new-file-submit').click()
@@ -176,9 +173,7 @@ test.describe('Folders in the file tree', () => {
     )
 
     await page.locator('[data-testid="file-node"][data-name="docs"]').click()
-    await page
-      .locator('[data-testid="file-node"][data-name="docs"] [data-testid="tree-new-file-button"]')
-      .click()
+    await startNewFileIn(page, 'docs')
 
     // Encrypted is out while the repository has no password; Plain is the only
     // choice and is preselected.
@@ -218,7 +213,7 @@ test.describe('Folders in the file tree', () => {
     )
 
     // A folder at the root. The new folder is listed, and its placeholder is hidden.
-    await rootNewFolderButton(page).click()
+    await startNewFolder(page)
     await expect(page.getByTestId('new-file-title')).toHaveText('Create New Folder')
     await page.getByTestId('new-file-input').fill('projects')
     await page.getByTestId('new-file-submit').click()
@@ -228,8 +223,8 @@ test.describe('Folders in the file tree', () => {
     await expect(folder).toHaveAttribute('data-node-type', 'dir')
     await expect(page.locator('[data-testid="file-node"][data-name=".gitkeep"]')).toHaveCount(0)
 
-    // The folder's own button creates a file inside it. The dialog names the folder.
-    await folder.locator('[data-testid="tree-new-file-button"]').click()
+    // The folder's own menu creates a file inside it. The dialog names the folder.
+    await startNewFileIn(page, 'projects')
     await expect(page.getByTestId('new-file-title')).toHaveText('Create New File')
     await expect(page.getByTestId('new-file-description')).toContainText('projects')
     await page.getByTestId('new-file-input').fill('todo.md')
@@ -269,9 +264,7 @@ test.describe('Folders in the file tree', () => {
     // `notes` is a plaintext folder in the seed. A folder created inside it while
     // the repository is locked is stored there, under its own name.
     await page.locator('[data-testid="file-node"][data-name="notes"]').click()
-    await page
-      .locator('[data-testid="file-node"][data-name="notes"] [data-testid="tree-new-folder-button"]')
-      .click()
+    await startNewFolderIn(page, 'notes')
     await expect(page.getByTestId('new-file-title')).toHaveText('Create New Folder')
     await expect(page.getByTestId('new-file-description')).toContainText('notes')
     await expect(page.getByTestId('new-file-description')).toContainText('plain folder')
@@ -292,15 +285,14 @@ test.describe('Folders in the file tree', () => {
     await page.getByTestId('repo-lock-toggle').click()
     await submitPassword(page, 'unlock', 'demo-password')
 
-    await rootNewFolderButton(page).click()
+    await startNewFolder(page)
     await page.getByTestId('new-file-input').fill('projects')
     await page.getByTestId('new-file-submit').click()
     await expect(page.getByTestId('notice')).toContainText('Created folder projects')
 
     // A folder inside it. Its name is derived from the folder's plaintext path,
     // so it lands in the folder that is already stored, not next to it.
-    const outer = page.locator('[data-testid="file-node"][data-name="projects"]')
-    await outer.locator('[data-testid="tree-new-folder-button"]').click()
+    await startNewFolderIn(page, 'projects')
     await expect(page.getByTestId('new-file-title')).toHaveText('Create New Folder')
     await expect(page.getByTestId('new-file-description')).toContainText('projects')
     await page.getByTestId('new-file-input').fill('inner')
@@ -328,13 +320,12 @@ test.describe('Folders in the file tree', () => {
 
     // A folder at the root, then a file inside it. The refresh after the save
     // must open the folder so the new file is visible without another click.
-    await rootNewFolderButton(page).click()
+    await startNewFolder(page)
     await page.getByTestId('new-file-input').fill('projects')
     await page.getByTestId('new-file-submit').click()
     await expect(page.getByTestId('notice')).toContainText('Created folder projects')
 
-    const folder = page.locator('[data-testid="file-node"][data-name="projects"]')
-    await folder.locator('[data-testid="tree-new-file-button"]').click()
+    await startNewFileIn(page, 'projects')
     await page.getByTestId('new-file-input').fill('todo.md')
     await page.getByTestId('new-file-submit').click()
     await fillEditor(page, '# Todo\n')
@@ -358,7 +349,7 @@ test.describe('Folders in the file tree', () => {
 
     // The dialog accepts a path with several segments, so the folders above the
     // file come into being with it. Both must be opened for the file to show.
-    await rootNewFileButton(page).click()
+    await startNewFile(page)
     await page.getByTestId('new-file-input').fill('docs/guide/setup.md')
     await page.getByTestId('new-file-submit').click()
     await fillEditor(page, '# Setup\n')
@@ -377,7 +368,7 @@ test.describe('Folders in the file tree', () => {
     await gotoApp(page)
     await expect(page.getByTestId('repo-lock-status')).toContainText('Locked')
 
-    await rootNewFileButton(page).click()
+    await startNewFile(page)
     // At the root both choices are offered; while locked, Plain is the one that
     // needs no password.
     await page.getByTestId('new-file-encryption-plain').click()
@@ -399,7 +390,7 @@ test.describe('Folders in the file tree', () => {
   test('rejects the reserved placeholder name', async ({ page }) => {
     await gotoApp(page)
 
-    await rootNewFileButton(page).click()
+    await startNewFile(page)
     await page.getByTestId('new-file-input').fill('.gitkeep')
     await page.getByTestId('new-file-submit').click()
 

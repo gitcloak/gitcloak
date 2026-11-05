@@ -375,7 +375,10 @@ Rules
   what the API can do for that row: `Rename`/`Delete` act on a file, `New file`/
   `New folder` on the folder the row sits in. An operation the server refuses —
   a folder, or `.gitcloak` — stays visible but disabled, with the reason on its
-  `title`, rather than disappearing from the menu.
+  `title`, rather than disappearing from the menu. The menu is the **only** entry
+  point for these four actions: no hover buttons on a row and no delete control
+  in the editor header duplicate them, because a second path is a second set of
+  safeguards to keep in step.
 - **Loading:** keep the control in place and change its label (`Processing…`,
   `Saving…`); animate icons with the shared `spin` / `pulse` keyframes.
 - **Empty:** centered, `--gc-fg-subtle`, short sentence + optional 48px icon.

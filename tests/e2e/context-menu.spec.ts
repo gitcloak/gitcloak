@@ -7,6 +7,8 @@ import {
   expectEditor,
   fetchMockState,
   fillEditor,
+  openRowMenu,
+  openRowMenuByName,
   storedPathOf,
   submitPassword,
 } from './helpers'
@@ -25,29 +27,6 @@ async function unlock(page: Page) {
   await expect(page.getByTestId('repo-lock-status')).toHaveAttribute(
     'data-repo-status',
     'unlocked'
-  )
-}
-
-/**
- * Right-click the row for `path` and wait for its menu. The menu carries the
- * path it was opened on, which is what proves the action targets that row.
- */
-async function openRowMenu(page: Page, path: string) {
-  await page.locator(fileRow(path)).click({ button: 'right' })
-  const menu = page.getByTestId('tree-context-menu')
-  await expect(menu).toBeVisible()
-  await expect(menu).toHaveAttribute('data-path', path)
-}
-
-/** Same, for a row only addressable by the name it shows (after decryption). */
-async function openRowMenuByName(page: Page, name: string) {
-  const row = page.locator(`[data-testid="file-node"][data-name="${name}"]`)
-  await expect(row).toBeVisible()
-  const path = await row.getAttribute('data-path')
-  await row.click({ button: 'right' })
-  await expect(page.getByTestId('tree-context-menu')).toHaveAttribute(
-    'data-path',
-    path as string
   )
 }
 

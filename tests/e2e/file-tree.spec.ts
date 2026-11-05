@@ -6,6 +6,7 @@ import {
   clickFileByName,
   expectEditor,
   fillEditor,
+  startNewFileIn,
   submitPassword,
 } from './helpers'
 
@@ -142,11 +143,7 @@ test.describe('File tree and editor', () => {
     // Start a plain file inside the seeded folder; demo-notes is locked, and a
     // plain file needs no password.
     await clickFileNode(page, 'notes')
-    await page
-      .locator(
-        '[data-testid="file-node"][data-name="notes"] [data-testid="tree-new-file-button"]'
-      )
-      .click()
+    await startNewFileIn(page, 'notes')
     await page.getByTestId('new-file-input').fill('scratch.md')
     await page.getByTestId('new-file-submit').click()
     await expect(page.getByTestId('selected-file-path')).toHaveText('notes/scratch.md')

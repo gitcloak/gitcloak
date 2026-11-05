@@ -6,7 +6,9 @@ import {
   clickFileNode,
   clickFileByName,
   fetchMockState,
-  rootNewFileButton,
+  openRowMenu,
+  openRowMenuByName,
+  startNewFile,
   storedPathOf,
   submitPassword,
 } from './helpers'
@@ -28,11 +30,11 @@ async function unlock(page: Page) {
   )
 }
 
-/** Open a file from the tree, then open the delete dialog from the header. */
+/** Open a file from the tree, then open the delete dialog from the row's menu. */
 async function openDelete(page: Page, path: string) {
   await page.locator(fileRow(path)).click()
-  await expect(page.getByTestId('delete-file-button')).toBeEnabled()
-  await page.getByTestId('delete-file-button').click()
+  await openRowMenu(page, path)
+  await page.getByTestId('tree-menu-delete').click()
   await expect(page.getByTestId('delete-file-dialog')).toBeVisible()
   await expect(page.getByTestId('delete-file-title')).toHaveText('Delete File')
 }
@@ -103,8 +105,9 @@ test.describe('Deleting a file', () => {
     // The tree shows the plain name; the repository stores an encrypted one.
     const storedPath = await storedPathOf(page, 'journal.md')
     await clickFileByName(page, 'journal.md')
-    await expect(page.getByTestId('delete-file-button')).toBeEnabled()
-    await page.getByTestId('delete-file-button').click()
+    await openRowMenuByName(page, 'journal.md')
+    await expect(page.getByTestId('tree-menu-delete')).toBeEnabled()
+    await page.getByTestId('tree-menu-delete').click()
     await expect(page.getByTestId('delete-file-description')).toContainText('journal.md')
     await page.getByTestId('delete-file-submit').click()
 
@@ -118,39 +121,44 @@ test.describe('Deleting a file', () => {
   }) => {
     await gotoApp(page)
 
-    // Nothing is open: the control is present (the guide never hides one) but inert.
-    await expect(page.getByTestId('delete-file-button')).toBeDisabled()
-
+    // A file that is in the repository can be deleted from its row's menu.
     await clickFileNode(page, 'README.md')
-    await expect(page.getByTestId('delete-file-button')).toBeEnabled()
+    await openRowMenu(page, 'README.md')
+    await expect(page.getByTestId('tree-menu-delete')).toBeEnabled()
+    await page.keyboard.press('Escape')
 
     // The repository's own metadata holds the name key and is never removed.
     await clickFileNode(page, '.gitcloak')
     await expect(page.getByTestId('selected-file-name')).toHaveText('.gitcloak')
-    await expect(page.getByTestId('delete-file-button')).toBeDisabled()
+    await openRowMenu(page, '.gitcloak')
+    await expect(page.getByTestId('tree-menu-delete')).toBeDisabled()
+    await expect(page.getByTestId('tree-menu-delete')).toHaveAttribute(
+      'title',
+      'The repository keeps its .gitcloak file.'
+    )
+    await page.keyboard.press('Escape')
 
-    // A file that has not been saved has no stored blob to delete.
-    await rootNewFileButton(page).click()
+    // A file that has not been saved has no stored blob, and no row to delete.
+    await startNewFile(page)
     await page.getByTestId('new-file-input').fill('unsaved.md')
     await page.getByTestId('new-file-submit').click()
     await expect(page.getByTestId('selected-file-name')).toHaveText('unsaved.md')
-    await expect(page.getByTestId('delete-file-button')).toBeDisabled()
+    await expect(page.locator(fileRow('unsaved.md'))).toHaveCount(0)
   })
 
-  test('the header delete control sits next to Save and is icon-only', async ({ page }) => {
+  test('offers delete only in a row’s context menu, not in the editor header', async ({
+    page,
+  }) => {
     await gotoApp(page)
     await clickFileNode(page, 'README.md')
 
-    const del = page.getByTestId('delete-file-button')
+    // The header keeps Save and Rename; removing a file is the menu's job.
+    await expect(page.getByTestId('save-button')).toBeVisible()
+    await expect(page.getByTestId('delete-file-button')).toHaveCount(0)
+
+    await openRowMenu(page, 'README.md')
+    const del = page.getByTestId('tree-menu-delete')
     await expect(del).toBeVisible()
-    // No visible text: the label lives in aria-label / title only.
-    await expect(del).toHaveAttribute('aria-label', 'Delete file')
-    expect((await del.innerText()).trim()).toBe('')
-    // It is the control immediately after Save in the header.
-    const followsSave = await del.evaluate(
-      (node) =>
-        node.previousElementSibling?.getAttribute('data-testid') === 'save-button'
-    )
-    expect(followsSave).toBe(true)
+    await expect(del).toContainText('Delete')
   })
 })

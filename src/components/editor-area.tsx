@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Clock, Code2, Eye, Pencil, PenLine, Save, Trash2, Zap } from 'lucide-react'
+import { Clock, Code2, Eye, Pencil, PenLine, Save, Zap } from 'lucide-react'
 
 import { MarkdownEditor } from '@/components/markdown-editor'
 import { Button } from '@/components/ui/button'
@@ -47,9 +47,6 @@ interface EditorAreaProps {
    */
   canRename: boolean
   onRename: () => void
-  /** Whether the open file can be deleted. */
-  canDelete: boolean
-  onDelete: () => void
   /**
    * Reports whether a save is in flight, so the rest of the app can block an
    * action that would race it (the file tree's delete, for one).
@@ -66,8 +63,6 @@ export function EditorArea({
   onSave,
   canRename,
   onRename,
-  canDelete,
-  onDelete,
   onSavingChange,
 }: EditorAreaProps) {
   // The parent keys this component by `openId`, so each opened file starts
@@ -166,9 +161,6 @@ export function EditorArea({
   }, [isSaving, onSavingChange])
 
   const canSave = Boolean(selectedFile) && hasChanges && !isSaving
-  // A save already in flight would recreate the file after the delete, so the
-  // delete waits for it to finish.
-  const canDeleteNow = canDelete && !isSaving
   // Autosave is on but idle: a file is open and its repository is locked, so a
   // save would need the password. No file open is not "paused" — nothing to
   // save yet.
@@ -315,19 +307,6 @@ export function EditorArea({
             {isSaving ? 'Saving…' : hasChanges ? 'Save Changes' : 'Save'}
           </span>
           <span className="sm:hidden">Save</span>
-        </Button>
-
-        <Button
-          data-testid="delete-file-button"
-          onClick={onDelete}
-          disabled={!canDeleteNow}
-          variant="outline"
-          size="icon-sm"
-          aria-label="Delete file"
-          title="Delete file"
-          className="shrink-0 border-gc-border bg-gc-surface text-gc-danger shadow-none hover:bg-gc-danger-bg hover:text-gc-danger"
-        >
-          <Trash2 className="size-4" />
         </Button>
       </header>
 

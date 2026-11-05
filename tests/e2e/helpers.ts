@@ -51,9 +51,65 @@ export async function selectRepo(page: Page, fullName: string): Promise<void> {
   )
 }
 
-/** The new-file button in the repository row at the top of the file tree. */
-export function rootNewFileButton(page: Page) {
-  return page.locator('[data-testid="tree-new-file-button"][data-path=""]')
+/** The context menu Radix renders for a tree row, once it is open. */
+export function treeContextMenu(page: Page) {
+  return page.getByTestId('tree-context-menu')
+}
+
+/**
+ * Right-click the tree row at `path` (the stored path GitHub has) and wait for
+ * its menu. The menu carries the path it was opened on, which is what proves
+ * the action targets that row.
+ */
+export async function openRowMenu(page: Page, path: string): Promise<void> {
+  await page.locator(`[data-testid="file-node"][data-path="${path}"]`).click({ button: 'right' })
+  const menu = treeContextMenu(page)
+  await expect(menu).toBeVisible()
+  await expect(menu).toHaveAttribute('data-path', path)
+}
+
+/**
+ * Right-click the row that shows `name`. Locked repositories show stored
+ * (encrypted) names, so use `openRowMenu` with the stored path there instead.
+ */
+export async function openRowMenuByName(page: Page, name: string): Promise<void> {
+  const row = page.locator(`[data-testid="file-node"][data-name="${name}"]`)
+  await expect(row).toBeVisible()
+  const path = await row.getAttribute('data-path')
+  await row.click({ button: 'right' })
+  await expect(treeContextMenu(page)).toHaveAttribute('data-path', path as string)
+}
+
+/** Right-click the repository row at the top of the file tree and wait for its menu. */
+export async function openRootMenu(page: Page): Promise<void> {
+  await page.locator('[data-testid="tree-root"]').click({ button: 'right' })
+  const menu = treeContextMenu(page)
+  await expect(menu).toBeVisible()
+  await expect(menu).toHaveAttribute('data-path', '')
+}
+
+/** Start a new file in the repository root, from the repository row's menu. */
+export async function startNewFile(page: Page): Promise<void> {
+  await openRootMenu(page)
+  await page.getByTestId('tree-menu-new-file').click()
+}
+
+/** Start a new folder in the repository root, from the repository row's menu. */
+export async function startNewFolder(page: Page): Promise<void> {
+  await openRootMenu(page)
+  await page.getByTestId('tree-menu-new-folder').click()
+}
+
+/** Start a new file inside the folder that shows `name`, from its row's menu. */
+export async function startNewFileIn(page: Page, name: string): Promise<void> {
+  await openRowMenuByName(page, name)
+  await page.getByTestId('tree-menu-new-file').click()
+}
+
+/** Start a new folder inside the folder that shows `name`, from its row's menu. */
+export async function startNewFolderIn(page: Page, name: string): Promise<void> {
+  await openRowMenuByName(page, name)
+  await page.getByTestId('tree-menu-new-folder').click()
 }
 
 /** Click a node in the file tree by its repository-relative path. */
