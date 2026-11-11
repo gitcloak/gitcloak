@@ -62,6 +62,70 @@ function nextOpenId(): number {
   return lastOpenId
 }
 
+/**
+ * Write one file to a repository, through the same route every other write
+ * goes through. `content` is either age ciphertext or plain text, and
+ * `encrypted` says which so the server can check it. Resolves with the new
+ * blob sha and the path it was stored at.
+ */
+async function postSave(
+  owner: string,
+  repo: string,
+  payload: {
+    path: string
+    content: string
+    encrypted: boolean
+    sha?: string
+    message: string
+  }
+): Promise<{ sha: string; path: string }> {
+  const response = await fetch(`/api/repos/${owner}/${repo}/save`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error.error || 'Failed to save file')
+  }
+
+  return response.json()
+}
+
+/**
+ * The stored path a brand-new file's bytes belong at.
+ *
+ * A plain file is written where it was created: to the stored path it carries
+ * from the folder it was made in, or — for a name typed at the root of a
+ * repository with encrypted names — with its folder segments encrypted, so it
+ * lands beside the encrypted files (its own name is not a secret).
+ *
+ * An encrypted file always lands under an encrypted name. Inside a folder the
+ * tree showed, only its own name is encrypted and that folder keeps the stored
+ * name it already has, the way a rename does; a name typed at the root has no
+ * stored folder to keep, so its folder segments are encrypted too.
+ */
+async function deriveNewFileStoredPath(
+  plainPath: string,
+  storedPath: string | undefined,
+  encrypted: boolean,
+  nameKey: FilenameKey | null
+): Promise<string> {
+  if (!encrypted) {
+    return storedPath ?? (nameKey ? await encryptPlainFilePath(plainPath, nameKey) : plainPath)
+  }
+  if (!nameKey) {
+    return `${storedPath ?? plainPath}.age`
+  }
+  const storedFolder = storedPath?.split('/').slice(0, -1).join('/') ?? null
+  return storedFolder !== null
+    ? `${storedFolder}/${await encryptEntryName(plainPath.split('/').pop() ?? plainPath, nameKey)}.age`
+    : await encryptRepoPath(plainPath, nameKey)
+}
+
 interface ClientPageProps {
   repositories: Repository[]
   userName: string
@@ -642,15 +706,16 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
   const handleCreateSubmit = (name: string) => {
     if (!selectedRepo || !createDialog) return
 
-    const path = createDialog.parent ? `${createDialog.parent}/${name}` : name
+    const { kind, parent, parentIsStored, storedParent, encrypted } = createDialog
+    const path = parent ? `${parent}/${name}` : name
     // A locked repository's folder path is already stored, and stored segments
     // are longer than the plaintext limit, so only the typed part is checked.
-    let problem = validateFilePath(createDialog.parentIsStored ? name : path)
+    let problem = validateFilePath(parentIsStored ? name : path)
     if (!problem && path.split('/').pop() === FOLDER_PLACEHOLDER) {
       problem = `${FOLDER_PLACEHOLDER} is reserved for empty folders.`
     }
     // `.age` is what marks a file as encrypted, so a plain file cannot use it.
-    if (!problem && createDialog.kind === 'file' && !createDialog.encrypted && path.endsWith('.age')) {
+    if (!problem && kind === 'file' && !encrypted && path.endsWith('.age')) {
       problem = 'A plain file name cannot end in .age.'
     }
     if (problem) {
@@ -658,34 +723,95 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
       return
     }
 
-    if (createDialog.kind === 'folder') {
+    if (kind === 'folder') {
       // A plain folder is written where the tree showed it — the folder the user
       // clicked — while an encrypted name is derived from `path`, the plaintext
       // path. `path` is the folder itself; the placeholder sits inside it.
       const plainPlaceholderPath =
-        createDialog.storedParent === null
+        storedParent === null
           ? `${path}/${FOLDER_PLACEHOLDER}`
-          : `${createDialog.storedParent}/${name}/${FOLDER_PLACEHOLDER}`
-      void handleCreateFolder(path, plainPlaceholderPath, createDialog.encrypted)
+          : `${storedParent}/${name}/${FOLDER_PLACEHOLDER}`
+      void handleCreateFolder(path, plainPlaceholderPath, encrypted)
       return
     }
 
-    // Create new file in memory
-    setSelectedFile({
-      path,
-      content: '',
-      sha: '', // Empty sha for new files
-      owner: selectedRepo.owner,
-      repo: selectedRepo.name,
-      encrypted: createDialog.encrypted,
-      isNew: true,
-      // A plain file created inside a folder is written to that folder's stored
-      // path, so it lands where the user clicked it and its folder segments are
-      // never encrypted a second time.
-      storedPath:
-        createDialog.storedParent === null ? undefined : `${createDialog.storedParent}/${name}`,
-      openId: nextOpenId(),
-    })
+    const owner = selectedRepo.owner
+    const repo = selectedRepo.name
+    const repoKey = `${owner}/${repo}`
+    const password = repoPasswords[repoKey]
+    // A plain file created inside a folder is written to that folder's stored
+    // path, so it lands where the user clicked it and its folder segments are
+    // never encrypted a second time.
+    const storedPath = storedParent === null ? undefined : `${storedParent}/${name}`
+    const openUnsaved = () =>
+      setSelectedFile({
+        path,
+        content: '',
+        sha: '', // Empty sha for new files
+        owner,
+        repo,
+        encrypted,
+        isNew: true,
+        storedPath,
+        openId: nextOpenId(),
+      })
+
+    // A file is written to the repository the moment it is created, empty, so it
+    // is in a commit and in the file tree without a save. A plain file needs
+    // nothing for that; an encrypted one needs the repository password (and its
+    // name key), which is only in memory while the repository is unlocked. Until
+    // then the file opens unsaved and the first save commits it — that is where
+    // the password is asked for — so creating a file in a locked or
+    // uninitialized repository behaves as it always has.
+    if (encrypted && !password) {
+      openUnsaved()
+      return
+    }
+
+    void (async () => {
+      setLoadingMessage('Creating file...')
+      setIsLoading(true)
+      try {
+        const { encryptWithPassword } = await import('@/lib/encryption')
+        const savePath = await deriveNewFileStoredPath(
+          path,
+          storedPath,
+          encrypted,
+          filenameKeys[repoKey] ?? null
+        )
+        const result = await postSave(owner, repo, {
+          path: savePath,
+          content: encrypted ? await encryptWithPassword('', password as string) : '',
+          encrypted,
+          message: `Create ${savePath}`,
+        })
+
+        setIsLoading(false)
+        setSelectedFile({
+          path: savePath,
+          content: '',
+          sha: result.sha,
+          owner,
+          repo,
+          encrypted,
+          openId: nextOpenId(),
+        })
+        showNotice('success', `Created ${path}`)
+        // Reveal the new file: its folders are opened, so one created at a
+        // nested path is visible even when a folder above it was collapsed.
+        window.__fileTreeRefresh?.(savePath)
+      } catch (error) {
+        console.error('Error creating file:', error)
+        setIsLoading(false)
+        showNotice(
+          'error',
+          `Failed to create file: ${error instanceof Error ? error.message : 'Unknown error'}`
+        )
+        // The write failed, so fall back to an unsaved file: the name the user
+        // typed is kept and the next save retries it.
+        openUnsaved()
+      }
+    })()
   }
 
   /** Open the rename dialog for the file the editor shows. */
@@ -867,29 +993,13 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
      * so the server can check it.
      */
     const saveToGitHub = async (savePath: string, body: string, encrypted: boolean) => {
-      const response = await fetch(
-        `/api/repos/${selectedFile.owner}/${selectedFile.repo}/save`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            path: savePath,
-            content: body,
-            encrypted,
-            sha: selectedFile.isNew ? undefined : selectedFile.sha,
-            message: selectedFile.isNew ? `Create ${savePath}` : `Update ${savePath}`,
-          }),
-        }
-      )
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}))
-        throw new Error(error.error || 'Failed to save file')
-      }
-
-      const result = await response.json()
+      const result = await postSave(selectedFile.owner, selectedFile.repo, {
+        path: savePath,
+        content: body,
+        encrypted,
+        sha: selectedFile.isNew ? undefined : selectedFile.sha,
+        message: selectedFile.isNew ? `Create ${savePath}` : `Update ${savePath}`,
+      })
 
       // Update selected file with new sha, path, content and remove isNew flag.
       // The save may finish after the user opened another file, so only update
@@ -927,11 +1037,14 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
       // stored tree as the encrypted files next to it.
       if (!selectedFile.encrypted) {
         const nameKey = filenameKeys[repoKeyForFile] ?? null
-        const savePath =
-          selectedFile.storedPath ??
-          (selectedFile.isNew && nameKey
-            ? await encryptPlainFilePath(selectedFile.path, nameKey)
-            : selectedFile.path)
+        const savePath = selectedFile.isNew
+          ? await deriveNewFileStoredPath(
+              selectedFile.path,
+              selectedFile.storedPath,
+              false,
+              nameKey
+            )
+          : selectedFile.path
         await saveToGitHub(savePath, content, false)
         return
       }
@@ -942,28 +1055,20 @@ export function ClientPage({ repositories, userName, userImage, userEmail }: Cli
         // Encrypt the content
         const encryptedContent = await encryptWithPassword(content, password)
 
-        // A new file's name is encrypted when the repository has a name key
-        // (see `openFilenameKey`). An opened file keeps the stored path it was
-        // loaded from, which is a `.age` path for every encrypted file.
-        //
-        // Inside a folder the tree showed, only the file's own name is
-        // encrypted. That folder keeps the stored name it already has — a plain
-        // one, for a folder created while the repository was locked or one that
-        // predates encrypted names — the way `name-migration.ts` renames a file
-        // in place and leaves its folder alone. Encrypting the folder segment
-        // again would write the file into a second, encrypted-name folder with
-        // the same label, leaving the folder the user clicked empty. A name
-        // typed at the repository root has no stored folder to keep, so its
-        // folder segments are encrypted instead.
-        const storedFolder =
-          selectedFile.storedPath?.split('/').slice(0, -1).join('/') ?? null
-        const name = selectedFile.path.split('/').pop() ?? selectedFile.path
+        // A new file's stored name is derived in `deriveNewFileStoredPath`: it
+        // is encrypted when the repository has a name key (see
+        // `openFilenameKey`), and inside a folder the tree showed only the
+        // file's own name changes — the folder keeps the stored name it already
+        // has, the way `name-migration.ts` renames a file in place. An opened
+        // file keeps the stored path it was loaded from, which is a `.age` path
+        // for every encrypted file.
         const savePath = selectedFile.isNew
-          ? nameKey
-            ? storedFolder !== null
-              ? `${storedFolder}/${await encryptEntryName(name, nameKey)}.age`
-              : await encryptRepoPath(selectedFile.path, nameKey)
-            : `${selectedFile.storedPath ?? selectedFile.path}.age`
+          ? await deriveNewFileStoredPath(
+              selectedFile.path,
+              selectedFile.storedPath,
+              true,
+              nameKey
+            )
           : selectedFile.path
 
         await saveToGitHub(savePath, encryptedContent, true)

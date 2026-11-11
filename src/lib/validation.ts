@@ -160,7 +160,11 @@ export function validateSavePayload(body: unknown): SavePayload {
   const validPath = validatePath(path)
   validateWritablePath(validPath, isEncrypted)
 
-  if (typeof content !== 'string' || content === '') {
+  // An empty body is allowed for a plain file: a new file is committed empty,
+  // and emptying an existing one is a legitimate edit. An encrypted file is
+  // never empty bytes — the age armor of an empty plaintext is not empty — so
+  // the check below still refuses one that carries nothing.
+  if (typeof content !== 'string') {
     throw new ValidationError('Missing required fields')
   }
   if (validPath === GITCLOAK_FILE) {
