@@ -364,6 +364,32 @@ and it carries the only motion in the app:
 - Both layers read `--gc-*` tokens, so light and dark come for free; the canvas
   re-reads `--gc-accent` when the `dark` class flips.
 
+### 6.10 App icon & home-screen install
+
+The app can be installed from the browser (`src/app/manifest.ts`, plus the
+Apple tags in `src/app/layout.tsx`). An install needs real files, which the hero
+lockup deliberately does not have:
+
+- **Icon art.** `public/icons/gitcloak-mark.svg` is the source: the same lockup
+  as the app — the brand gradient (`--gc-brand` → `--gc-brand-alt`) as a
+  full-bleed tile with the white `ShieldCheck` mark centred on it. Its paths are
+  copied from lucide's `shield-check`, so the icon and the in-app medallion
+  cannot drift apart. Corners are left square: iOS and Android mask the icon
+  themselves.
+- **Rendered sizes.** `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`
+  and `apple-touch-icon.png` are rendered from that SVG. None of them carries an
+  alpha channel — iOS composites a transparent pixel onto black, and that is
+  what turns an icon into a black tile. The maskable art keeps its content
+  inside the 80% safe circle Android crops to.
+- **Colours.** A manifest has one `theme_color` and one `background_color`, and
+  no way to follow `prefers-color-scheme`, so both are the brand accent: the one
+  value that reads the same in light and dark, and the tile's own colour in its
+  top-left corner.
+- **Safe areas.** The viewport asks for `viewport-fit=cover`, so the shell pads
+  itself with `gc-safe-insets` — the `env(safe-area-inset-*)` rule in
+  `globals.css`. Every inset is 0 in a browser tab, so any new full-bleed shell
+  can wear the same class and nothing changes on the desktop.
+
 ---
 
 ## 7. States & interaction
